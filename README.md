@@ -55,7 +55,7 @@ LCM-PG 在上游 LCM 基础上增加了 **PostgreSQL 异步镜像**：每次 com
 | Milestone | Deliverable | Status |
 |-----------|-------------|--------|
 | **FW-M0** | ADR: mirror mode (`latest_nodes` / `root_view`) and PG boundary | Done |
-| **FW-M1** | `lcm_mirror` DDL + `pg-sink` | Done (PG integration test pending) |
+| **FW-M1** | `lcm_mirror` DDL + `pg-sink` + integration test | Done |
 | **FW-M2** | `extract` + SQLite fixture tests | Done |
 | **FW-M3** | In-process queue + `afterTurn` hook + config | Done |
 | **FW-M4** | Cross-instance retrieval: PG-side search for mirror + shared knowledge in `assemble` | Not started |
@@ -168,6 +168,9 @@ npx tsc --noEmit
 
 # Run a specific test
 npx vitest test/mirror-extract.test.ts
+
+# Run PG integration test (requires local PostgreSQL + lcm_test database)
+TEST_PG_URL=postgresql://$(whoami)@localhost:5432/lcm_test npx vitest run test/mirror-pg-sink.test.ts
 ```
 
 ### Project structure

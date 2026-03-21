@@ -12,6 +12,7 @@ import type { LcmConfig } from "../src/db/config.js";
 import { closeLcmConnection, createLcmDatabaseConnection } from "../src/db/connection.js";
 import { LcmContextEngine } from "../src/engine.js";
 import type { LcmDependencies } from "../src/types.js";
+import { mirrorConfigDisabled } from "./mirror-deps-default.js";
 
 type SessionQueueEntry = { promise: Promise<void>; refCount: number };
 type QueueTestEngine = LcmContextEngine & {
@@ -67,6 +68,7 @@ function createTestDeps(config: LcmConfig): LcmDependencies {
     readLatestAssistantReply: () => undefined,
     resolveAgentDir: () => process.env.HOME ?? tmpdir(),
     resolveSessionIdFromSessionKey: async () => undefined,
+    mirrorConfig: mirrorConfigDisabled,
     agentLaneSubagent: "subagent",
     log: {
       info: vi.fn(),
