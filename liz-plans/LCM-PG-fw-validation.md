@@ -3,9 +3,9 @@
 ## Current State
 
 - OpenClaw `2026.3.8` is installed via Homebrew at `/opt/homebrew/bin/openclaw`
-- The **stock** lossless-claw v0.4.0 is installed (copied, not linked) at `~/.openclaw/extensions/lossless-claw/`
-- The **fork** (lcm-pg) with PG mirror code is at this repo (`/Users/lizbai/Documents/OpenClaw/VibeCoding/LCM-PG/`)
-- Unit tests already pass (`vitest run`), including `test/mirror-extract.test.ts`
+- The **fork** (lcm-pg) is linked as the active context engine at `~/Documents/OpenClaw/VibeCoding/LCM-PG/`
+- `~/.openclaw/openclaw.json` has `"slots": { "contextEngine": "lcm-pg" }`
+- PostgreSQL 16.13 installed locally via Homebrew; `lcm_test` database created
 - **You do NOT need OpenClaw source code.** The global CLI + plugin SDK is sufficient.
 
 ---
@@ -26,7 +26,7 @@ TEST_PG_URL=postgresql://$(whoami)@localhost:5432/lcm_test npx vitest run test/m
 
 Covers: table creation, upsert round-trip, idempotency, distinct content hashes. All 4 tests pass.
 
-### Layer 3: End-to-End with OpenClaw (the key step)
+### Layer 3: End-to-End with OpenClaw (done — 2026-03-21)
 
 ```
   User ──message──▸ OpenClaw ──ingest()──▸ LCM-PG Plugin
@@ -41,33 +41,42 @@ Covers: table creation, upsert round-trip, idempotency, distinct content hashes.
                                                           lcm_mirror row
 ```
 
-Steps:
+**Result**: 1 mirror row confirmed in `lcm_mirror` with correct `agent_id=main`, `mode=latest_nodes`, 943-char summary content, `summary_ids` JSONB, and SHA-256 `content_hash` for idempotency. Full details in [Layer3-validation-log.md](./Layer3-validation-log.md).
 
-1. **Build the plugin**: `npm run build` in the fork directory to ensure TypeScript compiles cleanly
-2. **Re-link the plugin**:
-   ```bash
-   openclaw plugins install --link /Users/lizbai/Documents/OpenClaw/VibeCoding/LCM-PG
-   ```
-   This replaces the static copy with a symlink to the fork.
-3. **Start PostgreSQL** (Docker or local)
-4. **Set mirror env vars** before starting OpenClaw:
-   ```bash
-   export LCM_MIRROR_ENABLED=true
-   export LCM_MIRROR_DATABASE_URL=postgresql://postgres:lcm@localhost:5432/postgres
-   export LCM_MIRROR_MODE=latest_nodes   # or root_view
-   ```
-5. **Start OpenClaw** with `openclaw` — check startup logs for the mirror banner (the code in [`src/plugin/index.ts`](../src/plugin/index.ts) logs when mirror is enabled)
-6. **Have a conversation** long enough to trigger compaction (8+ turns by default, governed by `freshTailCount` and `contextThreshold`)
-7. **Check PG**:
-   ```bash
-   psql postgresql://postgres:lcm@localhost:5432/postgres \
-     -c "SELECT mirror_id, agent_id, mode, length(content), captured_at FROM lcm_mirror;"
-   ```
-8. **Verify**: rows appear with correct `agent_id`, `mode`, non-empty `content`, and `summary_ids` JSONB
+**Reproduction recipe**:
 
-### Layer 4: Regression Check
+```bash
+# 1. Link the plugin (ensure openclaw.json has "contextEngine": "lcm-pg")
+openclaw plugins install --link /path/to/LCM-PG
 
-After linking the fork, run a short conversation with `LCM_MIRROR_ENABLED=false` (or unset) and verify the plugin behaves identically to stock LCM — no PG errors, no extra latency, lcm tools (`lcm_grep`, `lcm_describe`, `lcm_expand`) work normally.
+# 2. Start gateway with mirror + low threshold for fast compaction
+LCM_MIRROR_ENABLED=true \
+LCM_MIRROR_DATABASE_URL="postgresql://$(whoami)@localhost:5432/lcm_test" \
+LCM_MIRROR_MODE=latest_nodes \
+LCM_CONTEXT_THRESHOLD=0.05 \
+openclaw gateway --force
+
+# 3. Send messages (compaction triggers quickly at 0.05 threshold)
+openclaw agent --session-id test-mirror --message "Tell me a long story." --json
+
+# 4. Check PG
+psql -d lcm_test -c "SELECT mirror_id, agent_id, mode, length(content), captured_at FROM lcm_mirror;"
+```
+
+**Key gotchas encountered during validation** (see [Layer3-validation-log.md](./Layer3-validation-log.md)):
+
+1. **Slot mismatch**: After renaming plugin ID from `lossless-claw` to `lcm-pg`, `openclaw.json` `slots.contextEngine` must also be updated — OpenClaw doesn't auto-resolve renames.
+2. **Provider outage**: If your primary LLM provider is down, switch with `openclaw config set agents.defaults.model "provider/model"` + gateway restart.
+3. **Threshold tuning**: The default `contextThreshold=0.75` requires ~96k tokens before compaction. For testing, set `LCM_CONTEXT_THRESHOLD=0.05` to trigger compaction with just a few messages.
+
+### Layer 4: Regression Check (done — 2026-03-21)
+
+Restarted gateway with `LCM_MIRROR_ENABLED=false`:
+
+- No "PG mirror enabled" banner in logs — correct
+- Agent conversations succeed normally, no PG/mirror errors
+- Plugin loads as `lcm-pg` (ID), `LCM-PG Context Management` (name), v0.4.0
+- All LCM tools (`lcm_grep`, `lcm_describe`, `lcm_expand`) available and functional
 
 ---
 
