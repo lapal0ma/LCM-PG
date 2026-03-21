@@ -46,6 +46,35 @@ LCM-PG 在上游 LCM 基础上增加了 **PostgreSQL 异步镜像**：每次 com
 - **PostgreSQL** receives a write-only mirror of summary snapshots after compaction. The mirror is idempotent (`ON CONFLICT DO NOTHING` by content hash).
 - Agent tools do **not** query PG today. Cross-instance retrieval from PG is planned for milestone FW-M4.
 
+### Data flow / 数据流四层模型
+
+```
+  Agent X turn ──▸ SQLite (every message persisted locally)
+                      │
+                  compaction (when context threshold is hit)
+                      │
+                  lcm_mirror (PG, summary snapshots per agent)
+                      │
+                  main agent (admin) reads lcm_mirror
+                      │
+                  curates ──▸ shared_knowledge (PG, RLS-controlled)
+                      │
+                  other agents read shared_knowledge via assemble
+```
+
+The mirror syncs to PG **after compaction**, not after every turn. If compaction produces no new summaries, the content hash deduplication means no duplicate rows are written.
+
+PG 中有两张独立的表，各自承担不同职责：
+
+| | `lcm_mirror` | `shared_knowledge` (future) |
+|---|---|---|
+| **写入内容** | 单个 agent 的 compaction 摘要快照 | 经过筛选的跨 agent 共享知识 |
+| **谁来写** | 自动 — `afterTurn` compaction 后触发 | 人工/编排 — admin agent 从 mirror 精选后写入 |
+| **数据范围** | 单 agent、单 conversation | 整个 workspace（跨 agent） |
+| **可见性** | 隐式私有（按 `agent_id` 区分） | 显式控制 — `visibility`、`owner_agent_id`、`editable_by` + RLS |
+| **数据生命周期** | 只追加，`content_hash` 幂等 | 可修改、版本化、删除 |
+| **谁来读** | admin agent（全量）；未来：仪表盘、合规、跨实例检索 | 所有 agent 通过 `assemble` 注入上下文（按 RLS 权限过滤） |
+
 完整架构提案见 [LCM-PG-PLUG.md](liz-plans/LCM-PG-PLUG.md)；快速落地方案见 [LCM-PG-fast-workround.md](liz-plans/LCM-PG-fast-workround.md)。
 
 ---
