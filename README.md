@@ -1,401 +1,228 @@
-# lossless-claw
+# LCM-PG
 
-**Fork [LCM-PG](https://github.com/lapal0ma/LCM-PG)** — PostgreSQL / mirror experiments and docs on top of upstream [Martian-Engineering/lossless-claw](https://github.com/Martian-Engineering/lossless-claw).
+PostgreSQL mirror and multi-tenant groundwork for [lossless-claw](https://github.com/Martian-Engineering/lossless-claw), the DAG-based context engine for [OpenClaw](https://github.com/openclaw/openclaw).
 
-Lossless Context Management plugin for [OpenClaw](https://github.com/openclaw/openclaw), based on the [LCM paper](https://papers.voltropy.com/LCM) from [Voltropy](https://x.com/Voltropy). Replaces OpenClaw's built-in sliding-window compaction with a DAG-based summarization system that preserves every message while keeping active context within model token limits.
+> Fork of [Martian-Engineering/lossless-claw](https://github.com/Martian-Engineering/lossless-claw) · Upstream version **0.4.0**
 
-## Table of contents
+---
 
-- [What it does](#what-it-does)
-- [Quick start](#quick-start)
-- [Configuration](#configuration)
-- [Documentation](#documentation)
-- [Development](#development)
-- [License](#license)
+## What is LCM-PG / LCM-PG 是什么
 
-## What it does
+**lossless-claw** (LCM) is an OpenClaw context engine plugin. When a conversation exceeds the model's context window, LCM persists every message in SQLite, summarizes older messages into a DAG of summaries, and assembles context each turn from summaries + recent raw messages. Nothing is lost — agents can drill into any summary to recover the original detail via `lcm_grep`, `lcm_describe`, and `lcm_expand`.
 
-Two ways to learn: read the below, or [check out this super cool animated visualization](https://losslesscontext.ai).
+**LCM-PG** adds an **asynchronous PostgreSQL mirror** on top of LCM. After each turn's compaction, selected summary snapshots are written to a `lcm_mirror` table in PostgreSQL — enabling cross-instance search, dashboards, compliance archival, and eventually shared knowledge across multiple OpenClaw instances.
 
-When a conversation grows beyond the model's context window, OpenClaw (just like all of the other agents) normally truncates older messages. LCM instead:
+LCM-PG 在上游 LCM 基础上增加了 **PostgreSQL 异步镜像**：每次 compaction 后，将摘要快照写入 PG `lcm_mirror` 表，为跨实例检索、数据看板、合规归档以及多实例间共享知识打下基础。本地 agent 仍从 SQLite 读取上下文，PG 写入完全异步、不阻塞主流程。
 
-1. **Persists every message** in a SQLite database, organized by conversation
-2. **Summarizes chunks** of older messages into summaries using your configured LLM
-3. **Condenses summaries** into higher-level nodes as they accumulate, forming a DAG (directed acyclic graph)
-4. **Assembles context** each turn by combining summaries + recent raw messages
-5. **Provides tools** (`lcm_grep`, `lcm_describe`, `lcm_expand`) so agents can search and recall details from compacted history
+---
 
-Nothing is lost. Raw messages stay in the database. Summaries link back to their source messages. Agents can drill into any summary to recover the original detail.
+## Architecture / 架构概览
 
-**It feels like talking to an agent that never forgets. Because it doesn't. In normal operation, you'll never need to think about compaction again.**
+```
+  ┌──────────────────────────────────────────────────────────┐
+  │                     OpenClaw Instance                     │
+  │                                                          │
+  │  ingest() ──▸ SQLite ◂── assemble()                     │
+  │                 │            ▲                            │
+  │                 │   lcm_grep / lcm_expand (read)         │
+  │                 │                                        │
+  │  afterTurn() ── compact ── enqueueMirrorAfterTurn        │
+  │                                │                         │
+  └────────────────────────────────│─────────────────────────┘
+                                   │ async (fire-and-forget)
+                                   ▼
+                          ┌────────────────┐
+                          │  PostgreSQL     │
+                          │  lcm_mirror    │
+                          │  table          │
+                          └────────────────┘
+                                   │
+                        (future: cross-instance
+                         search, shared knowledge,
+                         dashboards)
+```
 
-## Quick start
+- **SQLite** remains the primary store — all reads (`assemble`, `lcm_grep`, `lcm_expand`) come from here.
+- **PostgreSQL** receives a write-only mirror of summary snapshots after compaction. The mirror is idempotent (`ON CONFLICT DO NOTHING` by content hash).
+- Agent tools do **not** query PG today. Cross-instance retrieval from PG is planned for milestone FW-M4.
+
+完整架构提案见 [LCM-PG-PLUG.md](liz-plans/LCM-PG-PLUG.md)；快速落地方案见 [LCM-PG-fast-workround.md](liz-plans/LCM-PG-fast-workround.md)。
+
+---
+
+## Milestone Status / 里程碑进度
+
+| Milestone | Deliverable | Status |
+|-----------|-------------|--------|
+| **FW-M0** | ADR: mirror mode (`latest_nodes` / `root_view`) and PG boundary | Done |
+| **FW-M1** | `lcm_mirror` DDL + `pg-sink` | Done (PG integration test pending) |
+| **FW-M2** | `extract` + SQLite fixture tests | Done |
+| **FW-M3** | In-process queue + `afterTurn` hook + config | Done |
+| **FW-M4** | Cross-instance retrieval: PG-side search for mirror + shared knowledge in `assemble` | Not started |
+| **FW-M5** | Compaction-complete hook (optional) | Not started |
+
+详细实施计划见 [LCM-PG-fw-plan.md](liz-plans/LCM-PG-fw-plan.md)。
+
+---
+
+## Quick Start
 
 ### Prerequisites
 
-- OpenClaw with plugin context engine support
+- [OpenClaw](https://github.com/openclaw/openclaw) with plugin context engine support
 - Node.js 22+
 - An LLM provider configured in OpenClaw (used for summarization)
+- PostgreSQL (only if enabling the mirror)
 
 ### Install the plugin
 
-Use OpenClaw's plugin installer (recommended):
-
-```bash
-openclaw plugins install @martian-engineering/lossless-claw
-```
-
-If you're running from a local OpenClaw checkout, use:
-
-```bash
-pnpm openclaw plugins install @martian-engineering/lossless-claw
-```
-
-For local plugin development, link your working copy instead of copying files:
+Link this fork as a local plugin:
 
 ```bash
 openclaw plugins install --link /path/to/lossless-claw
-# or from a local OpenClaw checkout:
-# pnpm openclaw plugins install --link /path/to/lossless-claw
 ```
 
-The install command records the plugin, enables it, and applies compatible slot selection (including `contextEngine` when applicable).
+Verify it loads:
 
-### Configure OpenClaw
-
-In most cases, no manual JSON edits are needed after `openclaw plugins install`.
-
-If you need to set it manually, ensure the context engine slot points at lossless-claw:
-
-```json
-{
-  "plugins": {
-    "slots": {
-      "contextEngine": "lossless-claw"
-    }
-  }
-}
+```bash
+openclaw plugins list
+# Should show "lossless-claw" as loaded
 ```
 
-Restart OpenClaw after configuration changes.
+### Enable the PG mirror
 
-## Configuration
+Set these environment variables before starting OpenClaw:
 
-LCM is configured through a combination of plugin config and environment variables. Environment variables take precedence for backward compatibility.
-
-### Plugin config
-
-Add a `lossless-claw` entry under `plugins.entries` in your OpenClaw config:
-
-```json
-{
-  "plugins": {
-    "entries": {
-      "lossless-claw": {
-        "enabled": true,
-        "config": {
-          "freshTailCount": 32,
-          "contextThreshold": 0.75,
-          "incrementalMaxDepth": -1,
-          "ignoreSessionPatterns": [
-            "agent:*:cron:**"
-          ],
-          "summaryProvider": "anthropic",
-          "summaryModel": "claude-3-5-haiku"
-        }
-      }
-    }
-  }
-}
+```bash
+export LCM_MIRROR_ENABLED=true
+export LCM_MIRROR_DATABASE_URL=postgresql://user:pass@localhost:5432/mydb
+export LCM_MIRROR_MODE=latest_nodes   # or root_view
 ```
 
-`summaryModel` and `summaryProvider` let you pin compaction summarization to a cheaper or faster model than your main OpenClaw session model. When unset, LCM uses OpenClaw's configured default model/provider.
+The startup log will confirm the mirror is active. After enough turns trigger compaction, rows appear in the `lcm_mirror` table.
 
-### Environment variables
+Without these variables (or with `LCM_MIRROR_ENABLED=false`), the plugin behaves identically to upstream LCM — no PG dependency, no extra latency.
+
+---
+
+## Mirror Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LCM_ENABLED` | `true` | Enable/disable the plugin |
-| `LCM_DATABASE_PATH` | `~/.openclaw/lcm.db` | Path to the SQLite database |
-| `LCM_IGNORE_SESSION_PATTERNS` | `""` | Comma-separated glob patterns for session keys to exclude from LCM storage |
-| `LCM_STATELESS_SESSION_PATTERNS` | `""` | Comma-separated glob patterns for session keys that may read from LCM but never write to it |
-| `LCM_SKIP_STATELESS_SESSIONS` | `true` | Enable stateless-session write skipping for matching session keys |
-| `LCM_CONTEXT_THRESHOLD` | `0.75` | Fraction of context window that triggers compaction (0.0–1.0) |
-| `LCM_FRESH_TAIL_COUNT` | `32` | Number of recent messages protected from compaction |
-| `LCM_LEAF_MIN_FANOUT` | `8` | Minimum raw messages per leaf summary |
-| `LCM_CONDENSED_MIN_FANOUT` | `4` | Minimum summaries per condensed node |
-| `LCM_CONDENSED_MIN_FANOUT_HARD` | `2` | Relaxed fanout for forced compaction sweeps |
-| `LCM_INCREMENTAL_MAX_DEPTH` | `0` | How deep incremental compaction goes (0 = leaf only, -1 = unlimited) |
-| `LCM_LEAF_CHUNK_TOKENS` | `20000` | Max source tokens per leaf compaction chunk |
-| `LCM_LEAF_TARGET_TOKENS` | `1200` | Target token count for leaf summaries |
-| `LCM_CONDENSED_TARGET_TOKENS` | `2000` | Target token count for condensed summaries |
-| `LCM_MAX_EXPAND_TOKENS` | `4000` | Token cap for sub-agent expansion queries |
-| `LCM_LARGE_FILE_TOKEN_THRESHOLD` | `25000` | File blocks above this size are intercepted and stored separately |
-| `LCM_LARGE_FILE_SUMMARY_PROVIDER` | `""` | Provider override for large-file summarization |
-| `LCM_LARGE_FILE_SUMMARY_MODEL` | `""` | Model override for large-file summarization |
-| `LCM_SUMMARY_MODEL` | `""` | Model override for compaction summarization; falls back to OpenClaw's default model when unset |
-| `LCM_SUMMARY_PROVIDER` | `""` | Provider override for compaction summarization; falls back to `OPENCLAW_PROVIDER` or the provider embedded in the model ref |
-| `LCM_EXPANSION_MODEL` | *(from OpenClaw)* | Model override for `lcm_expand_query` sub-agent (e.g. `anthropic/claude-haiku-4-5`) |
-| `LCM_EXPANSION_PROVIDER` | *(from OpenClaw)* | Provider override for `lcm_expand_query` sub-agent |
-| `LCM_AUTOCOMPACT_DISABLED` | `false` | Disable automatic compaction after turns |
-| `LCM_PRUNE_HEARTBEAT_OK` | `false` | Retroactively delete `HEARTBEAT_OK` turn cycles from LCM storage |
+| `LCM_MIRROR_ENABLED` | `false` | Enable async PG mirror |
+| `LCM_MIRROR_DATABASE_URL` | — | PostgreSQL connection string (single URL fallback) |
+| `LCM_MIRROR_MODE` | `latest_nodes` | Mirror content mode: `latest_nodes` (last N summaries by creation order) or `root_view` (current context items / root DAG view) |
+| `LCM_MIRROR_MAX_NODES` | `5` | Max summary nodes per mirror snapshot |
+| `LCM_MIRROR_QUEUE_CONCURRENCY` | `1` | Concurrent mirror write jobs (1–8) |
+| `LCM_MIRROR_MAX_RETRIES` | `4` | Retry count per mirror job (exponential backoff) |
+| `LCM_MIRROR_AGENT_PG_MAP` | `{}` | JSON map of `agentId` to PG connection string, for per-agent routing |
 
-### Expansion model override requirements
+All mirror variables can also be set via plugin config (`mirrorEnabled`, `mirrorDatabaseUrl`, etc.). Environment variables take precedence.
 
-If you want `lcm_expand_query` to run on a dedicated model via `expansionModel` or `LCM_EXPANSION_MODEL`, OpenClaw must explicitly trust the plugin to request sub-agent model overrides.
+### LCM core configuration
 
-Add a `subagent` policy under `plugins.entries.lossless-claw` and allowlist the canonical `provider/model` target you want the plugin to use:
+LCM core settings (`LCM_FRESH_TAIL_COUNT`, `LCM_CONTEXT_THRESHOLD`, session patterns, expansion model overrides, etc.) are unchanged from upstream. See [README_orig.md](README_orig.md) for the full reference.
 
-```json
-{
-  "models": {
-    "openai/gpt-4.1-mini": {}
-  },
-  "plugins": {
-    "entries": {
-      "lossless-claw": {
-        "enabled": true,
-        "subagent": {
-          "allowModelOverride": true,
-          "allowedModels": ["openai/gpt-4.1-mini"]
-        },
-        "config": {
-          "expansionModel": "openai/gpt-4.1-mini"
-        }
-      }
-    }
-  }
-}
-```
+---
 
-- `subagent.allowModelOverride` is required for OpenClaw to honor plugin-requested per-run `provider`/`model` overrides.
-- `subagent.allowedModels` is optional but recommended. Use `"*"` only if you intentionally want to trust any target model.
-- The chosen expansion target must also be available in OpenClaw's normal model catalog. If it is not already configured elsewhere, add it under the top-level `models` map as shown above.
-- If you prefer splitting provider and model, set `config.expansionProvider` and use a bare `config.expansionModel`.
+## Documentation / 文档
 
-Plugin config equivalents:
+### Project plans / 项目规划
 
-- `ignoreSessionPatterns`
-- `statelessSessionPatterns`
-- `skipStatelessSessions`
-- `summaryModel`
-- `summaryProvider`
+| Document | Description |
+|----------|-------------|
+| [LCM-PG-PLUG.md](liz-plans/LCM-PG-PLUG.md) | Overall multi-tenant architecture proposal / 总体多租户架构提案 |
+| [LCM-PG-IMPLEMENTATION-PLAN.md](liz-plans/LCM-PG-IMPLEMENTATION-PLAN.md) | Full implementation plan with milestones / 完整实施计划 |
+| [LCM-PG-fast-workround.md](liz-plans/LCM-PG-fast-workround.md) | Fast workaround: SQLite local + PG shared / 快速落地方案 |
+| [LCM-PG-fw-plan.md](liz-plans/LCM-PG-fw-plan.md) | Async mirror implementation plan / 异步镜像实施拆解 |
+| [LCM-PG-fw-validation.md](liz-plans/LCM-PG-fw-validation.md) | Validation and testing plan / 验证测试计划 |
+| [deep-dive-rdbms-proposal.md](liz-plans/deep-dive-rdbms-proposal.md) | Original RDBMS exploration notes / 早期 RDBMS 探索笔记 |
 
-Environment variables still win over plugin config when both are set.
+### Architecture decisions
 
-### Summary model priority
+| Document | Description |
+|----------|-------------|
+| [specs/lcm-pg-decisions.md](specs/lcm-pg-decisions.md) | ADR: identity routing, workspace config semantics |
 
-For compaction summarization, lossless-claw resolves the model in this order:
+### Upstream docs
 
-1. `LCM_SUMMARY_MODEL` / `LCM_SUMMARY_PROVIDER`
-2. Plugin config `summaryModel` / `summaryProvider`
-3. OpenClaw's default compaction model/provider
-4. Legacy per-call model/provider hints
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture.md) | LCM internal data model, compaction lifecycle, DAG structure |
+| [Agent tools](docs/agent-tools.md) | `lcm_grep`, `lcm_describe`, `lcm_expand` reference |
+| [Configuration guide](docs/configuration.md) | Detailed config reference |
+| [FTS5 setup](docs/fts5.md) | Optional FTS5 for fast full-text search |
+| [TUI reference](docs/tui.md) | Terminal UI documentation |
+| [Animated visualization](https://losslesscontext.ai) | Interactive explanation of LCM |
 
-If `summaryModel` already includes a provider prefix such as `anthropic/claude-sonnet-4-20250514`, `summaryProvider` is ignored for that choice. Otherwise, the provider falls back to the matching override, then `OPENCLAW_PROVIDER`, then the provider inferred by the caller.
-
-### Recommended starting configuration
-
-```
-LCM_FRESH_TAIL_COUNT=32
-LCM_INCREMENTAL_MAX_DEPTH=-1
-LCM_CONTEXT_THRESHOLD=0.75
-```
-
-- **freshTailCount=32** protects the last 32 messages from compaction, giving the model enough recent context for continuity.
-- **incrementalMaxDepth=-1** enables unlimited automatic condensation after each compaction pass — the DAG cascades as deep as needed. Set to `0` (default) for leaf-only, or a positive integer for a specific depth cap.
-- **contextThreshold=0.75** triggers compaction when context reaches 75% of the model's window, leaving headroom for the model's response.
-
-### Session exclusion patterns
-
-Use `ignoreSessionPatterns` or `LCM_IGNORE_SESSION_PATTERNS` to keep low-value sessions completely out of LCM. Matching sessions do not create conversations, do not store messages, and do not participate in compaction or delegated expansion grants.
-
-Pattern rules:
-
-- `*` matches any characters except `:`
-- `**` matches anything, including `:`
-- Patterns match the full session key
-
-Examples:
-
-- `agent:*:cron:**` excludes cron sessions for any agent, including isolated run sessions like `agent:main:cron:daily-digest:run:run-123`
-- `agent:main:subagent:**` excludes all main-agent subagent sessions
-- `agent:ops:**` excludes every session under the `ops` agent id
-
-Environment variable example:
-
-```bash
-LCM_IGNORE_SESSION_PATTERNS=agent:*:cron:**,agent:main:subagent:**
-```
-
-Plugin config example:
-
-```json
-{
-  "plugins": {
-    "entries": {
-      "lossless-claw": {
-        "config": {
-          "ignoreSessionPatterns": [
-            "agent:*:cron:**",
-            "agent:main:subagent:**"
-          ]
-        }
-      }
-    }
-  }
-}
-```
-
-### Stateless session patterns
-
-Use `statelessSessionPatterns` or `LCM_STATELESS_SESSION_PATTERNS` for sessions that should still be able to read from existing LCM context, but should never create or mutate LCM state themselves. This is useful for delegated or temporary sub-agent sessions that should benefit from retained context without polluting the database.
-
-When `skipStatelessSessions` or `LCM_SKIP_STATELESS_SESSIONS` is enabled, matching sessions:
-
-- skip bootstrap imports
-- skip message persistence during ingest and after-turn hooks
-- skip compaction writes and delegated expansion grant writes
-- can still assemble context from already-persisted conversations when a matching conversation exists
-
-Pattern rules are the same as `ignoreSessionPatterns`, and matching is done against the full session key.
-
-Environment variable example:
-
-```bash
-LCM_STATELESS_SESSION_PATTERNS=agent:*:subagent:**,agent:ops:subagent:**
-LCM_SKIP_STATELESS_SESSIONS=true
-```
-
-Plugin config example:
-
-```json
-{
-  "plugins": {
-    "entries": {
-      "lossless-claw": {
-        "config": {
-          "statelessSessionPatterns": [
-            "agent:*:subagent:**",
-            "agent:ops:subagent:**"
-          ],
-          "skipStatelessSessions": true
-        }
-      }
-    }
-  }
-}
-```
-
-### OpenClaw session reset settings
-
-LCM preserves history through compaction, but it does **not** change OpenClaw's core session reset policy. If sessions are resetting sooner than you want, increase OpenClaw's `session.reset.idleMinutes` or use a channel/type-specific override.
-
-```json
-{
-  "session": {
-    "reset": {
-      "mode": "idle",
-      "idleMinutes": 10080
-    }
-  }
-}
-```
-
-- `session.reset.mode: "idle"` keeps a session alive until the idle window expires.
-- `session.reset.idleMinutes` is the actual reset interval in minutes.
-- OpenClaw does **not** currently enforce a maximum `idleMinutes`; in source it is validated only as a positive integer.
-- If you also use daily reset mode, `idleMinutes` acts as a secondary guard and the session resets when **either** the daily boundary or the idle window is reached first.
-- Legacy `session.idleMinutes` still works, but OpenClaw prefers `session.reset.idleMinutes`.
-
-Useful values:
-
-- `1440` = 1 day
-- `10080` = 7 days
-- `43200` = 30 days
-- `525600` = 365 days
-
-For most long-lived LCM setups, a good starting point is:
-
-```json
-{
-  "session": {
-    "reset": {
-      "mode": "idle",
-      "idleMinutes": 10080
-    }
-  }
-}
-```
-
-## Documentation
-
-- [Configuration guide](docs/configuration.md)
-- [Architecture](docs/architecture.md)
-- [Agent tools](docs/agent-tools.md)
-- [TUI Reference](docs/tui.md)
-- [lcm-tui](tui/README.md)
-- [Optional: enable FTS5 for fast full-text search](docs/fts5.md)
+---
 
 ## Development
 
 ```bash
-# Run tests
-npx vitest
+# Run all tests
+npx vitest run --dir test
 
 # Type check
 npx tsc --noEmit
 
-# Run a specific test file
-npx vitest test/engine.test.ts
+# Run a specific test
+npx vitest test/mirror-extract.test.ts
 ```
 
 ### Project structure
 
 ```
-index.ts                    # Plugin entry point and registration
+index.ts                        # Plugin entry point
 src/
-  engine.ts                 # LcmContextEngine — implements ContextEngine interface
-  assembler.ts              # Context assembly (summaries + messages → model context)
-  compaction.ts             # CompactionEngine — leaf passes, condensation, sweeps
-  summarize.ts              # Depth-aware prompt generation and LLM summarization
-  retrieval.ts              # RetrievalEngine — grep, describe, expand operations
-  expansion.ts              # DAG expansion logic for lcm_expand_query
-  expansion-auth.ts         # Delegation grants for sub-agent expansion
-  expansion-policy.ts       # Depth/token policy for expansion
-  large-files.ts            # File interception, storage, and exploration summaries
-  integrity.ts              # DAG integrity checks and repair utilities
-  transcript-repair.ts      # Tool-use/result pairing sanitization
-  types.ts                  # Core type definitions (dependency injection contracts)
-  openclaw-bridge.ts        # Bridge utilities
+  engine.ts                     # LcmContextEngine — ContextEngine interface + mirror hook
+  assembler.ts                  # Context assembly (summaries + messages → model context)
+  compaction.ts                 # CompactionEngine — leaf passes, condensation, sweeps
+  summarize.ts                  # Depth-aware prompt generation and LLM summarization
+  retrieval.ts                  # RetrievalEngine — grep, describe, expand (SQLite only)
+  types.ts                      # Core types and dependency injection contracts
+  plugin/
+    index.ts                    # Plugin registration, config resolution, mirror init
+  mirror/                       # ── PG mirror (this fork) ──
+    types.ts                    # LcmMirrorConfig, LcmMirrorRow, LcmMirrorMode
+    config.ts                   # Resolve mirror config from env / plugin config
+    extract.ts                  # Build mirror payload from SQLite summaries
+    pg-sink.ts                  # DDL, connection pooling, upsert to lcm_mirror
+    queue.ts                    # Single-lane async job queue
   db/
-    config.ts               # LcmConfig resolution from env vars
-    connection.ts           # SQLite connection management
-    migration.ts            # Schema migrations
+    config.ts                   # LcmConfig resolution
+    connection.ts               # SQLite connection management
+    migration.ts                # Schema migrations
   store/
-    conversation-store.ts   # Message persistence and retrieval
-    summary-store.ts        # Summary DAG persistence and context item management
-    fts5-sanitize.ts        # FTS5 query sanitization
+    conversation-store.ts       # Message persistence and retrieval
+    summary-store.ts            # Summary DAG persistence
   tools/
-    lcm-grep-tool.ts        # lcm_grep tool implementation
-    lcm-describe-tool.ts    # lcm_describe tool implementation
-    lcm-expand-tool.ts      # lcm_expand tool (sub-agent only)
-    lcm-expand-query-tool.ts # lcm_expand_query tool (main agent wrapper)
-    lcm-conversation-scope.ts # Conversation scoping utilities
-    common.ts               # Shared tool utilities
-test/                       # Vitest test suite
-specs/                      # Design specifications
-openclaw.plugin.json        # Plugin manifest with config schema and UI hints
-tui/                        # Interactive terminal UI (Go)
-  main.go                   # Entry point and bubbletea app
-  data.go                   # Data loading and SQLite queries
-  dissolve.go               # Summary dissolution
-  repair.go                 # Corrupted summary repair
-  rewrite.go                # Summary re-summarization
-  transplant.go             # Cross-conversation DAG copy
-  prompts/                  # Depth-aware prompt templates
-.goreleaser.yml             # GoReleaser config for TUI binary releases
+    lcm-grep-tool.ts            # lcm_grep
+    lcm-describe-tool.ts        # lcm_describe
+    lcm-expand-tool.ts          # lcm_expand (sub-agent)
+    lcm-expand-query-tool.ts    # lcm_expand_query (main agent)
+test/                           # Vitest test suite
+  mirror-extract.test.ts        # Mirror payload extraction tests
+  mirror-deps-default.ts        # Shared disabled-mirror config for tests
+specs/                          # Architecture decision records
+liz-plans/                      # Project plans and proposals
+tui/                            # Interactive terminal UI (Go)
+openclaw.plugin.json            # Plugin manifest with config schema
 ```
+
+---
+
+## Upstream / 上游
+
+This fork tracks [Martian-Engineering/lossless-claw](https://github.com/Martian-Engineering/lossless-claw). Mirror and multi-tenant features are developed here first; upstream-compatible improvements will be contributed back.
+
+```bash
+git remote -v
+# origin    https://github.com/lapal0ma/LCM-PG.git (fetch/push)
+# upstream  https://github.com/Martian-Engineering/lossless-claw.git (fetch/push)
+```
+
+---
 
 ## License
 

@@ -94,7 +94,7 @@ OpenClaw 实例 A / B / C
 
 - [LCM-PG-PLUG.md](./LCM-PG-PLUG.md) — 总体提案与 toB 架构共识  
 - [LCM-PG-IMPLEMENTATION-PLAN.md](./LCM-PG-IMPLEMENTATION-PLAN.md) — 完整实施阶段与 OpenClaw 协议约束  
-- [specs/lcm-pg-decisions.md](./specs/lcm-pg-decisions.md) — ADR 草案  
+- [specs/lcm-pg-decisions.md](../specs/lcm-pg-decisions.md) — ADR 草案  
 
 ---
 

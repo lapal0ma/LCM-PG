@@ -167,7 +167,7 @@ CREATE INDEX lcm_mirror_agent_idx ON lcm_mirror (agent_id, ingested_at DESC);
 - [LCM-PG-fast-workround.md](./LCM-PG-fast-workround.md)  
 - [LCM-PG-PLUG.md](./LCM-PG-PLUG.md)  
 - [LCM-PG-IMPLEMENTATION-PLAN.md](./LCM-PG-IMPLEMENTATION-PLAN.md)  
-- [specs/lcm-pg-decisions.md](./specs/lcm-pg-decisions.md)  
+- [specs/lcm-pg-decisions.md](../specs/lcm-pg-decisions.md)  
 
 ---
 

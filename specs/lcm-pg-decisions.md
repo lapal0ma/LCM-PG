@@ -1,6 +1,6 @@
 # LCM-PG 架构决策记录（草案）
 
-> 与 [LCM-PG-PLUG.md](../LCM-PG-PLUG.md)、[LCM-PG-IMPLEMENTATION-PLAN.md](../LCM-PG-IMPLEMENTATION-PLAN.md) 同步更新。
+> 与 [LCM-PG-PLUG.md](../liz-plans/LCM-PG-PLUG.md)、[LCM-PG-IMPLEMENTATION-PLAN.md](../liz-plans/LCM-PG-IMPLEMENTATION-PLAN.md) 同步更新。
 
 ## ADR-001：OpenClaw 无 ContextEngine 身份字段时的路由策略
 

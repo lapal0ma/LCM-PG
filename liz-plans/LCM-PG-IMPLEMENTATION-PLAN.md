@@ -58,7 +58,7 @@
 | **U2** | 新增正式类型（如 `ContextEngineCallContext`），**所有** `ingest` / `assemble` / … 透传 | **可信 `agentId` + 可选 `userId`**，RLS 完整 |
 | **U3** | 网关层保证 context **不可被通道消息伪造** | toB 安全叙事 |
 
-**产出**：本仓库 `specs/lcm-pg-decisions.md`（或 ADR）+ **「OpenClaw 集成」小节**：列明依赖版本、workaround、上游 issue/PR 链接。
+**产出**：本仓库 `../specs/lcm-pg-decisions.md`（或 ADR）+ **「OpenClaw 集成」小节**：列明依赖版本、workaround、上游 issue/PR 链接。
 
 ---
 
