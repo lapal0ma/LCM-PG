@@ -7,6 +7,7 @@ import {
 } from "../src/expansion-auth.js";
 import { createLcmExpandTool } from "../src/tools/lcm-expand-tool.js";
 import type { LcmDependencies } from "../src/types.js";
+import { mirrorConfigDisabled } from "./mirror-deps-default.js";
 
 const callGatewayMock = vi.fn();
 
@@ -52,6 +53,7 @@ function makeDeps(overrides?: Partial<LcmDependencies>): LcmDependencies {
       timezone: "UTC",
       pruneHeartbeatOk: false,
     },
+    mirrorConfig: mirrorConfigDisabled,
     complete: vi.fn(),
     callGateway: (params: { method: string; params?: Record<string, unknown> }) =>
       callGatewayMock(params),

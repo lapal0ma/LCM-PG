@@ -35,6 +35,10 @@ import {
   generateExplorationSummary,
   parseFileBlocks,
 } from "./large-files.js";
+import { extractMirrorPayload } from "./mirror/extract.js";
+import { resolveMirrorDatabaseUrl } from "./mirror/config.js";
+import { MirrorQueue } from "./mirror/queue.js";
+import { upsertLcmMirrorRow } from "./mirror/pg-sink.js";
 import { RetrievalEngine } from "./retrieval.js";
 import { compileSessionPatterns, matchesSessionPattern } from "./session-patterns.js";
 import { logStartupBannerOnce } from "./startup-banner-log.js";
@@ -963,6 +967,7 @@ export class LcmContextEngine implements ContextEngine {
   private compaction: CompactionEngine;
   private retrieval: RetrievalEngine;
   private readonly db: DatabaseSync;
+  private readonly mirrorQueue: MirrorQueue | null;
   private migrated = false;
   private readonly fts5Available: boolean;
   private readonly ignoreSessionPatterns: RegExp[];
@@ -1025,6 +1030,7 @@ export class LcmContextEngine implements ContextEngine {
       fts5Available: this.fts5Available,
     });
     this.summaryStore = new SummaryStore(this.db, { fts5Available: this.fts5Available });
+    this.mirrorQueue = deps.mirrorConfig.enabled ? new MirrorQueue() : null;
 
     if (!this.fts5Available) {
       this.deps.log.warn(
@@ -1187,6 +1193,90 @@ export class LcmContextEngine implements ContextEngine {
       return Math.floor(lp.tokenBudget);
     }
     return undefined;
+  }
+
+  /** Best-effort async mirror of summary text to PostgreSQL (LCM-PG-fw-plan.md). */
+  private enqueueMirrorAfterTurn(params: { sessionId: string; sessionKey?: string }): void {
+    if (!this.mirrorQueue || !this.deps.mirrorConfig.enabled) {
+      return;
+    }
+    const sessionKey = params.sessionKey?.trim() ?? "";
+    const parsed = sessionKey ? this.deps.parseAgentSessionKey(sessionKey) : null;
+    const agentId = parsed?.agentId ?? this.deps.normalizeAgentId(undefined);
+    const url = resolveMirrorDatabaseUrl(this.deps.mirrorConfig, agentId);
+    if (!url) {
+      this.deps.log.debug(
+        `[lcm] mirror: skip (no database URL for agent=${agentId}); set LCM_MIRROR_DATABASE_URL or mirrorAgentDatabaseUrls`,
+      );
+      return;
+    }
+    this.mirrorQueue.enqueue(() =>
+      this.runMirrorJobOnce({
+        sessionId: params.sessionId,
+        sessionKey: sessionKey || undefined,
+        agentId,
+        url,
+      }),
+    );
+  }
+
+  private async runMirrorJobOnce(params: {
+    sessionId: string;
+    sessionKey?: string;
+    agentId: string;
+    url: string;
+  }): Promise<void> {
+    const conversationId = await this.resolveConversationIdForMirror(
+      params.sessionId,
+      params.sessionKey,
+    );
+    if (conversationId == null) {
+      return;
+    }
+    let delayMs = 300;
+    const maxAttempts = this.deps.mirrorConfig.maxRetries + 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const row = await extractMirrorPayload({
+          summaryStore: this.summaryStore,
+          conversationId,
+          sessionKey: params.sessionKey ?? "",
+          sessionId: params.sessionId,
+          agentId: params.agentId,
+          mode: this.deps.mirrorConfig.mode,
+          maxNodes: this.deps.mirrorConfig.maxNodes,
+        });
+        if (!row) {
+          return;
+        }
+        await upsertLcmMirrorRow(params.url, row);
+        return;
+      } catch (err) {
+        if (attempt + 1 >= maxAttempts) {
+          this.deps.log.warn(
+            `[lcm] mirror: failed after ${maxAttempts} attempt(s): ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return;
+        }
+        await new Promise((r) => setTimeout(r, delayMs));
+        delayMs = Math.min(delayMs * 2, 10_000);
+      }
+    }
+  }
+
+  private async resolveConversationIdForMirror(
+    sessionId: string,
+    sessionKey?: string,
+  ): Promise<number | undefined> {
+    try {
+      const conv = await this.conversationStore.getConversationForSession({
+        sessionId,
+        sessionKey,
+      });
+      return conv?.conversationId;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Resolve an LCM conversation id from a session key via the session store. */
@@ -2165,6 +2255,11 @@ export class LcmContextEngine implements ContextEngine {
     } catch {
       // Proactive compaction is best-effort in the post-turn lifecycle.
     }
+
+    this.enqueueMirrorAfterTurn({
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+    });
   }
 
   async assemble(params: {

@@ -111,6 +111,40 @@
       },
       "expansionProvider": {
         "type": "string"
+      },
+      "mirrorEnabled": {
+        "type": "boolean"
+      },
+      "mirrorDatabaseUrl": {
+        "type": "string"
+      },
+      "mirrorPostgresUrl": {
+        "type": "string"
+      },
+      "mirrorMode": {
+        "type": "string",
+        "enum": ["latest_nodes", "root_view"]
+      },
+      "mirrorMaxNodes": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 50
+      },
+      "mirrorQueueConcurrency": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 8
+      },
+      "mirrorMaxRetries": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 10
+      },
+      "mirrorAgentDatabaseUrls": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
       }
     }
   }

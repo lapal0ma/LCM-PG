@@ -1,18 +1,18 @@
 # lcm-tui
 
-Interactive terminal UI for inspecting, debugging, and maintaining the [Lossless Claw](https://github.com/Martian-Engineering/lossless-claw) database. Browse conversations, navigate the summary DAG, see exactly what the model sees in context, and perform surgical repairs — all from the terminal.
+Interactive terminal UI for inspecting, debugging, and maintaining the [LCM-PG / Lossless Claw](https://github.com/lapal0ma/LCM-PG) database (fork of [upstream](https://github.com/Martian-Engineering/lossless-claw)). Browse conversations, navigate the summary DAG, see exactly what the model sees in context, and perform surgical repairs — all from the terminal.
 
 ## Install
 
 **From releases:**
 
-Download the latest binary from [GitHub Releases](https://github.com/Martian-Engineering/lossless-claw/releases).
+Download the latest binary from [GitHub Releases](https://github.com/lapal0ma/LCM-PG/releases) (or [upstream releases](https://github.com/Martian-Engineering/lossless-claw/releases)).
 
 **From source:**
 
 ```bash
 go build -o lcm-tui .
-# or: go install github.com/Martian-Engineering/lossless-claw/tui@latest
+# or: go install github.com/lapal0ma/LCM-PG/tui@latest
 ```
 
 Requires Go 1.24+.
@@ -71,4 +71,4 @@ Rewrite, repair, and backfill compaction operations call provider APIs directly.
 
 ## License
 
-Part of the [Lossless Claw](https://github.com/Martian-Engineering/lossless-claw) monorepo.
+Part of the [LCM-PG](https://github.com/lapal0ma/LCM-PG) monorepo.

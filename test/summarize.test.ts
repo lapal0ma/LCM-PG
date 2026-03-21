@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLcmSummarizeFromLegacyParams, type LcmSummarizeFn } from "../src/summarize.js";
 import type { LcmDependencies } from "../src/types.js";
+import { mirrorConfigDisabled } from "./mirror-deps-default.js";
 
 async function createSummarizeFn(
   params: Parameters<typeof createLcmSummarizeFromLegacyParams>[0],
@@ -36,6 +37,7 @@ function makeDeps(overrides?: Partial<LcmDependencies>): LcmDependencies {
       timezone: "UTC",
       pruneHeartbeatOk: false,
     },
+    mirrorConfig: mirrorConfigDisabled,
     complete: vi.fn(async () => ({
       content: [{ type: "text", text: "summary output" }],
     })),

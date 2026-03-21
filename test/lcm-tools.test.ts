@@ -8,6 +8,7 @@ import { createLcmDescribeTool } from "../src/tools/lcm-describe-tool.js";
 import { createLcmExpandTool } from "../src/tools/lcm-expand-tool.js";
 import { createLcmGrepTool } from "../src/tools/lcm-grep-tool.js";
 import type { LcmDependencies } from "../src/types.js";
+import { mirrorConfigDisabled } from "./mirror-deps-default.js";
 
 function parseAgentSessionKey(sessionKey: string): { agentId: string; suffix: string } | null {
   const trimmed = sessionKey.trim();
@@ -51,6 +52,7 @@ function makeDeps(overrides?: Partial<LcmDependencies>): LcmDependencies {
       timezone: "UTC",
       pruneHeartbeatOk: false,
     },
+    mirrorConfig: mirrorConfigDisabled,
     complete: vi.fn(),
     callGateway: vi.fn(async () => ({})),
     resolveModel: () => ({ provider: "anthropic", model: "claude-opus-4-5" }),

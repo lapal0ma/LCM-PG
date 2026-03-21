@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { resolveLcmConfig } from "../db/config.js";
+import { resolveLcmMirrorConfig } from "../mirror/config.js";
 import { createLcmDatabaseConnection } from "../db/connection.js";
 import { LcmContextEngine } from "../engine.js";
 import { logStartupBannerOnce } from "../startup-banner-log.js";
@@ -875,6 +876,7 @@ function createLcmDependencies(api: OpenClawPluginApi): LcmDependencies {
       ? api.pluginConfig
       : undefined;
   const config = resolveLcmConfig(process.env, pluginConfig);
+  const mirrorConfig = resolveLcmMirrorConfig(process.env, pluginConfig);
 
   // Read model overrides from plugin config
   if (pluginConfig) {
@@ -894,6 +896,7 @@ function createLcmDependencies(api: OpenClawPluginApi): LcmDependencies {
 
   return {
     config,
+    mirrorConfig,
     complete: async ({
       provider,
       model,
@@ -1360,6 +1363,13 @@ const lcmPlugin = {
       log: (message) => api.logger.info(message),
       message: `[lcm] Plugin loaded (enabled=${deps.config.enabled}, db=${deps.config.databasePath}, threshold=${deps.config.contextThreshold})`,
     });
+    if (deps.mirrorConfig.enabled) {
+      logStartupBannerOnce({
+        key: "mirror-enabled",
+        log: (message) => api.logger.info(message),
+        message: `[lcm] PG mirror enabled (mode=${deps.mirrorConfig.mode}, maxNodes=${deps.mirrorConfig.maxNodes}); set LCM_MIRROR_DATABASE_URL or mirrorAgentDatabaseUrls`,
+      });
+    }
     logStartupBannerOnce({
       key: "compaction-model",
       log: (message) => api.logger.info(message),

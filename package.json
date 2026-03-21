@@ -32,7 +32,8 @@
   "dependencies": {
     "@mariozechner/pi-agent-core": "*",
     "@mariozechner/pi-ai": "*",
-    "@sinclair/typebox": "0.34.48"
+    "@sinclair/typebox": "0.34.48",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.6.0",
@@ -53,10 +54,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Martian-Engineering/lossless-claw.git"
+    "url": "git+https://github.com/lapal0ma/LCM-PG.git"
   },
-  "homepage": "https://github.com/Martian-Engineering/lossless-claw#readme",
+  "homepage": "https://github.com/lapal0ma/LCM-PG#readme",
   "bugs": {
-    "url": "https://github.com/Martian-Engineering/lossless-claw/issues"
+    "url": "https://github.com/lapal0ma/LCM-PG/issues"
   }
 }

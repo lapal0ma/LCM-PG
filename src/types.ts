@@ -6,6 +6,7 @@
  */
 
 import type { LcmConfig } from "./db/config.js";
+import type { LcmMirrorConfig } from "./mirror/types.js";
 
 /**
  * Minimal LLM completion interface needed by LCM for summarization.
@@ -94,6 +95,9 @@ export type IsSubagentSessionKeyFn = (sessionKey: string) => boolean;
 export interface LcmDependencies {
   /** LCM configuration (from env vars + plugin config) */
   config: LcmConfig;
+
+  /** Optional PG mirror (LCM-PG fast workaround B); see LCM-PG-fw-plan.md */
+  mirrorConfig: LcmMirrorConfig;
 
   /** LLM completion function for summarization */
   complete: CompleteFn;

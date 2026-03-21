@@ -17,6 +17,7 @@ import {
 } from "../src/expansion-auth.js";
 import { RetrievalEngine } from "../src/retrieval.js";
 import type { LcmDependencies } from "../src/types.js";
+import { mirrorConfigDisabled } from "./mirror-deps-default.js";
 
 const tempDirs: string[] = [];
 
@@ -69,6 +70,7 @@ function createTestDeps(
 ): LcmDependencies {
   return {
     config,
+    mirrorConfig: mirrorConfigDisabled,
     complete: vi.fn(async () => ({
       content: [{ type: "text", text: "summary output" }],
     })),
