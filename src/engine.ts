@@ -38,7 +38,7 @@ import {
 import { extractMirrorPayload } from "./mirror/extract.js";
 import { resolveMirrorDatabaseUrl } from "./mirror/config.js";
 import { MirrorQueue } from "./mirror/queue.js";
-import { upsertLcmMirrorRow } from "./mirror/pg-sink.js";
+import { closeAllMirrorPools, upsertLcmMirrorRow } from "./mirror/pg-sink.js";
 import { RetrievalEngine } from "./retrieval.js";
 import { compileSessionPatterns, matchesSessionPattern } from "./session-patterns.js";
 import { logStartupBannerOnce } from "./startup-banner-log.js";
@@ -2742,11 +2742,31 @@ export class LcmContextEngine implements ContextEngine {
   }
 
   async dispose(): Promise<void> {
-    // No-op for plugin singleton — the connection is shared across runs.
     // OpenClaw's runner calls dispose() after every run, but the plugin
     // registers a single engine instance reused by the factory. Closing
-    // the DB here would break subsequent runs with "database is not open".
-    // The shared connection is managed for the lifetime of the plugin process.
+    // the SQLite DB here would break subsequent runs with "database is not open",
+    // so the shared connection remains process-lifetime managed.
+    if (this.mirrorQueue) {
+      try {
+        await this.mirrorQueue.flush();
+      } catch (err) {
+        this.deps.log.warn(
+          `[lcm] mirror: failed to flush pending jobs during dispose: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+
+      try {
+        await closeAllMirrorPools();
+      } catch (err) {
+        this.deps.log.warn(
+          `[lcm] mirror: failed to close PG pools during dispose: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
   }
 
   // ── Public accessors for retrieval (used by subagent expansion) ─────────
