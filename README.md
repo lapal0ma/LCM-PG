@@ -187,6 +187,12 @@ With this setting:
 `LCM_ASSEMBLE_SK_TIMEOUT_MS` defaults to `2000ms`.  
 For remote/managed PG with higher latency, tune to `3000-5000ms` to reduce skipped injection due to timeout.
 
+### PostgreSQL version requirement
+
+**PostgreSQL 13 or later** is required.  
+`lcm_mirror` uses `gen_random_uuid()` as a server-side default, which is built-in starting with PG 13 (earlier versions need the `pgcrypto` extension).
+
+
 ### Managed Postgres note
 
 Shared knowledge schema initialization does **not** run `CREATE EXTENSION pgcrypto`.  
