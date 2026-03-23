@@ -145,8 +145,31 @@ Without these variables (or with `LCM_MIRROR_ENABLED=false`), the plugin behaves
 | `LCM_MIRROR_QUEUE_CONCURRENCY` | `1` | Concurrent mirror write jobs (1–8) |
 | `LCM_MIRROR_MAX_RETRIES` | `4` | Retry count per mirror job (exponential backoff) |
 | `LCM_MIRROR_AGENT_PG_MAP` | `{}` | JSON map of `agentId` to PG connection string, for per-agent routing |
+| `LCM_SHARED_KNOWLEDGE_ENABLED` | `true` when mirror enabled | Enable shared-knowledge tools and role-based PG read layer |
+| `LCM_ASSEMBLE_SHARED_KNOWLEDGE` | `true` | Enable assemble-time shared knowledge injection |
+| `LCM_ASSEMBLE_SK_LIMIT` | `5` | Max shared-knowledge entries injected into assemble |
+| `LCM_ASSEMBLE_SK_MAX_TOKENS` | `2000` | Token budget cap for assemble shared-knowledge block |
+| `LCM_ASSEMBLE_SK_TIMEOUT_MS` | `500` | Timeout for shared-knowledge lookup during assemble |
+| `LCM_ADMIN_ROLE_NAME` | `admin` | Role-group name used as admin authority |
+| `LCM_ADMIN_AGENT_IDS` | `main` | Bootstrap admin agent IDs used for first-run role seeding |
+| `LCM_ROLE_BOOTSTRAP_MAP` | built-in map | JSON map of `agentId -> role[]` for idempotent startup seeding |
 
 All mirror variables can also be set via plugin config (`mirrorEnabled`, `mirrorDatabaseUrl`, etc.). Environment variables take precedence.
+
+### Shared knowledge URL resolution (important)
+
+When `LCM_SHARED_KNOWLEDGE_ENABLED=true`, the plugin must resolve **one shared PG URL**. Resolution order:
+
+1. `mirrorAgentDatabaseUrls.main`
+2. `LCM_MIRROR_DATABASE_URL` / `mirrorDatabaseUrl`
+3. Exactly one unique mirror URL across map + default
+
+If none of the above applies, shared knowledge is disabled at startup with an explicit error log.
+
+### Managed Postgres note
+
+Shared knowledge schema initialization does **not** run `CREATE EXTENSION pgcrypto`.  
+`shared_knowledge.knowledge_id` is generated in application code, so managed Postgres environments that block extension creation are supported.
 
 ### LCM core configuration
 

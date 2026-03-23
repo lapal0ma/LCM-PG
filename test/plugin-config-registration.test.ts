@@ -401,6 +401,7 @@ describe("lcm plugin registration", () => {
     const { api } = buildApi({
       enabled: true,
       mirrorEnabled: true,
+      mirrorDatabaseUrl: "postgresql://user:pass@localhost:5432/lcm_main",
       sharedKnowledgeEnabled: true,
     });
 
@@ -421,6 +422,34 @@ describe("lcm plugin registration", () => {
       "lcm_shared_knowledge_write",
       "lcm_shared_knowledge_search",
     ]));
+  });
+
+  it("disables shared knowledge tools with a clear error when shared DB URL cannot be resolved", () => {
+    const { api } = buildApi({
+      enabled: true,
+      mirrorEnabled: true,
+      sharedKnowledgeEnabled: true,
+      mirrorAgentDatabaseUrls: {
+        worker: "postgresql://worker:pass@localhost:5432/lcm_worker",
+        research: "postgresql://research:pass@localhost:5432/lcm_research",
+      },
+    });
+    const errorLog = api.logger.error as ReturnType<typeof vi.fn>;
+
+    lcmPlugin.register(api);
+
+    const callbacks = (api.registerTool as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call[0] as (ctx: { sessionKey?: string }) => { name: string });
+    const tools = callbacks.map((factory) => factory({ sessionKey: "agent:main:main" }));
+    const names = tools.map((tool) => tool.name);
+
+    expect(names).toContain("lcm_mirror_search");
+    expect(names).not.toContain("lcm_manage_roles");
+    expect(names).not.toContain("lcm_shared_knowledge_write");
+    expect(names).not.toContain("lcm_shared_knowledge_search");
+    expect(errorLog).toHaveBeenCalledWith(
+      expect.stringContaining("Shared knowledge disabled: could not resolve a shared PG database URL"),
+    );
   });
 
   it("registers without runtime.modelAuth on older OpenClaw runtimes", () => {

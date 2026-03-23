@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { ensureLcmMirrorTable } from "./pg-sink.js";
 import { getOrCreatePgPool, loadPg } from "./pg-common.js";
 
@@ -10,8 +11,6 @@ const ensuredSharedKnowledgeUrls = new Set<string>();
 const SHARED_SCHEMA_LOCK_KEY = "lcm_shared_knowledge_schema_v1";
 
 const SHARED_KNOWLEDGE_DDL = `
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS knowledge_roles (
   agent_id    TEXT NOT NULL,
   role        TEXT NOT NULL,
@@ -22,7 +21,7 @@ CREATE TABLE IF NOT EXISTS knowledge_roles (
 CREATE INDEX IF NOT EXISTS kr_role_idx ON knowledge_roles (role);
 
 CREATE TABLE IF NOT EXISTS shared_knowledge (
-  knowledge_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  knowledge_id      UUID PRIMARY KEY,
   owner_agent_id    TEXT NOT NULL,
   visibility        TEXT NOT NULL DEFAULT 'shared' CHECK (visibility IN ('shared', 'restricted', 'private')),
   visible_to        TEXT[] NOT NULL DEFAULT '{}',
@@ -448,6 +447,7 @@ export async function writeSharedKnowledge(
   input: SharedKnowledgeWriteInput,
 ): Promise<SharedKnowledgeRow> {
   await ensureSharedKnowledgeSchema(connectionString);
+  const knowledgeId = randomUUID();
   const visibility = input.visibility ?? "shared";
   const visibleTo = normalizeArray(input.visibleTo);
   const editableBy = normalizeArray(input.editableBy);
@@ -461,12 +461,13 @@ export async function writeSharedKnowledge(
     fn: (client) =>
       client.query(
         `INSERT INTO shared_knowledge (
-           owner_agent_id, visibility, visible_to, editable_by, title, content, source_mirror_ids, tags
-         ) VALUES ($1, $2, $3::text[], $4::text[], $5, $6, $7::uuid[], $8::text[])
+           knowledge_id, owner_agent_id, visibility, visible_to, editable_by, title, content, source_mirror_ids, tags
+         ) VALUES ($1::uuid, $2, $3, $4::text[], $5::text[], $6, $7, $8::uuid[], $9::text[])
          RETURNING
            knowledge_id, owner_agent_id, visibility, visible_to, editable_by, title, content,
            source_mirror_ids, tags, created_at, updated_at`,
         [
+          knowledgeId,
           input.agentId,
           visibility,
           visibleTo,

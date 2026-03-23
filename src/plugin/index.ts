@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { resolveLcmConfig } from "../db/config.js";
-import { resolveLcmMirrorConfig } from "../mirror/config.js";
+import { resolveLcmMirrorConfig, resolveSharedKnowledgeDatabaseUrl } from "../mirror/config.js";
 import { createLcmDatabaseConnection } from "../db/connection.js";
 import { LcmContextEngine } from "../engine.js";
 import { logStartupBannerOnce } from "../startup-banner-log.js";
@@ -1327,6 +1327,20 @@ const lcmPlugin = {
 
   register(api: OpenClawPluginApi) {
     const deps = createLcmDependencies(api);
+    if (deps.mirrorConfig.enabled && deps.mirrorConfig.sharedKnowledgeEnabled) {
+      const sharedKnowledgeUrl = resolveSharedKnowledgeDatabaseUrl(deps.mirrorConfig);
+      if (!sharedKnowledgeUrl) {
+        deps.mirrorConfig.sharedKnowledgeEnabled = false;
+        deps.mirrorConfig.assembleSharedKnowledge = false;
+        logStartupBannerOnce({
+          key: "shared-knowledge-misconfigured",
+          log: (message) => api.logger.error(message),
+          message:
+            "[lcm] Shared knowledge disabled: could not resolve a shared PG database URL. " +
+            "Set LCM_MIRROR_DATABASE_URL or mirrorAgentDatabaseUrls.main (or provide exactly one mirror URL).",
+        });
+      }
+    }
     const database = createLcmDatabaseConnection(deps.config.databasePath);
     const lcm = new LcmContextEngine(deps, database);
 
