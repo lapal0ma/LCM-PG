@@ -64,7 +64,8 @@ export function createLcmMirrorSearchTool(input: {
     label: "LCM Mirror Search",
     description:
       "Admin-only search across PostgreSQL mirror rows. " +
-      "Useful for finding compacted summaries by keyword/time/agent filters.",
+      "When shared knowledge is enabled, admin is checked by admin role membership; " +
+      "when shared knowledge is disabled, admin is checked by bootstrap admin agent IDs.",
     parameters: MirrorSearchSchema,
     async execute(_toolCallId, rawParams) {
       try {
@@ -88,6 +89,7 @@ export function createLcmMirrorSearchTool(input: {
         }
 
         const adminDbUrl = resolveSharedKnowledgeDatabaseUrl(input.deps.mirrorConfig);
+        const useRoleBasedAdminCheck = Boolean(adminDbUrl && input.deps.mirrorConfig.sharedKnowledgeEnabled);
         let isAdmin = input.deps.mirrorConfig.bootstrapAdminAgentIds.includes(caller.agentId);
         if (adminDbUrl && input.deps.mirrorConfig.sharedKnowledgeEnabled) {
           await ensureSharedKnowledgeTables(adminDbUrl);
@@ -98,6 +100,13 @@ export function createLcmMirrorSearchTool(input: {
           });
         }
         if (!isAdmin) {
+          if (!useRoleBasedAdminCheck) {
+            return jsonResult({
+              error:
+                `Access denied: '${caller.agentId}' is not in bootstrap mirror admins (${input.deps.mirrorConfig.bootstrapAdminAgentIds.join(", ") || "none"}). ` +
+                "Set LCM_ADMIN_AGENT_IDS (or mirrorAdminAgents) to grant mirror-search admin when shared knowledge is disabled.",
+            });
+          }
           return jsonResult({
             error: `Access denied: '${caller.agentId}' does not have admin role '${input.deps.mirrorConfig.adminRoleName}'.`,
           });

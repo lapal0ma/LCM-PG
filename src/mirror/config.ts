@@ -2,6 +2,7 @@ import type { LcmMirrorConfig, LcmMirrorMode } from "./types.js";
 
 const DEFAULT_ADMIN_ROLE = "admin";
 const DEFAULT_BOOTSTRAP_ADMIN_AGENT_IDS = ["main"];
+const DEFAULT_ASSEMBLE_SHARED_KNOWLEDGE_TIMEOUT_MS = 2000;
 const DEFAULT_ROLE_BOOTSTRAP_MAP: Record<string, string[]> = {
   main: [DEFAULT_ADMIN_ROLE],
   research: ["researcher"],
@@ -191,6 +192,7 @@ export function resolveLcmMirrorConfig(
   const sharedKnowledgeEnabled =
     env.LCM_SHARED_KNOWLEDGE_ENABLED !== undefined
       ? env.LCM_SHARED_KNOWLEDGE_ENABLED === "true"
+      // Backward-compatible default: when mirror is enabled, shared knowledge is enabled unless explicitly disabled.
       : (toBool(pc.sharedKnowledgeEnabled ?? pc.mirrorSharedKnowledgeEnabled) ?? enabled);
 
   const rawAssembleSharedKnowledge =
@@ -215,7 +217,7 @@ export function resolveLcmMirrorConfig(
       ? parseInt(env.LCM_ASSEMBLE_SK_TIMEOUT_MS, 10)
       : undefined) ??
     toNumber(pc.assembleSkTimeoutMs ?? pc.mirrorAssembleSkTimeoutMs) ??
-    500;
+    DEFAULT_ASSEMBLE_SHARED_KNOWLEDGE_TIMEOUT_MS;
 
   const adminRoleName =
     env.LCM_ADMIN_ROLE_NAME?.trim() ??

@@ -27,11 +27,25 @@ describe("resolveLcmMirrorConfig shared knowledge defaults", () => {
     expect(cfg.assembleSharedKnowledge).toBe(true);
     expect(cfg.assembleSharedKnowledgeLimit).toBe(5);
     expect(cfg.assembleSharedKnowledgeMaxTokens).toBe(2000);
-    expect(cfg.assembleSharedKnowledgeTimeoutMs).toBe(500);
+    expect(cfg.assembleSharedKnowledgeTimeoutMs).toBe(2000);
     expect(cfg.adminRoleName).toBe("admin");
     expect(cfg.roleBootstrapMap.main).toContain("admin");
     expect(cfg.roleBootstrapMap.research).toContain("researcher");
     expect(cfg.roleBootstrapMap.email).toContain("personal-ops");
+  });
+
+  it("supports mirror-only mode by explicitly disabling shared knowledge", () => {
+    const cfg = resolveLcmMirrorConfig(
+      {
+        LCM_MIRROR_ENABLED: "true",
+        LCM_MIRROR_DATABASE_URL: "postgresql://main:test@localhost:5432/lcm",
+        LCM_SHARED_KNOWLEDGE_ENABLED: "false",
+      } as NodeJS.ProcessEnv,
+      {},
+    );
+    expect(cfg.enabled).toBe(true);
+    expect(cfg.sharedKnowledgeEnabled).toBe(false);
+    expect(cfg.assembleSharedKnowledge).toBe(false);
   });
 
   it("applies bootstrap admin ids and role bootstrap map overrides", () => {

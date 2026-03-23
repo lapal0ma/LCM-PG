@@ -1429,7 +1429,7 @@ const lcmPlugin = {
           log: (message) => api.logger.info(message),
           message:
             `[lcm] Shared knowledge enabled ` +
-            `(assemble=${deps.mirrorConfig.assembleSharedKnowledge}, limit=${deps.mirrorConfig.assembleSharedKnowledgeLimit}, maxTokens=${deps.mirrorConfig.assembleSharedKnowledgeMaxTokens})`,
+            `(assemble=${deps.mirrorConfig.assembleSharedKnowledge}, limit=${deps.mirrorConfig.assembleSharedKnowledgeLimit}, maxTokens=${deps.mirrorConfig.assembleSharedKnowledgeMaxTokens}, timeoutMs=${deps.mirrorConfig.assembleSharedKnowledgeTimeoutMs})`,
         });
       }
     }

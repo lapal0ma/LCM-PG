@@ -328,4 +328,47 @@ describe("M4 tools", () => {
       expect.stringContaining("lcm_mirror_search partial failure on postgresql://invalid-host:5432/lcm_bad"),
     );
   });
+
+  it("lcm_mirror_search uses bootstrap admin ids when shared knowledge is disabled", async () => {
+    const deps = makeDeps();
+    deps.mirrorConfig.sharedKnowledgeEnabled = false;
+    deps.mirrorConfig.assembleSharedKnowledge = false;
+    searchMirrorMock.mockResolvedValue({
+      rows: [
+        {
+          mirrorId: "m2",
+          sessionKey: "agent:main:main",
+          conversationId: 43,
+          agentId: "main",
+          mode: "latest_nodes",
+          content: "Mirror-only admin path",
+          capturedAt: new Date("2026-03-03T01:00:00.000Z"),
+          sourceUrl: "postgresql://default:test@localhost:5432/lcm",
+        },
+      ],
+      errors: [],
+    });
+    const tool = createLcmMirrorSearchTool({
+      deps,
+      lcm: makeLcmStub() as never,
+      sessionKey: "agent:main:main",
+    });
+    const result = await tool.execute("call-7", { query: "mirror-only", limit: 10 });
+    expect(agentHasRoleMock).not.toHaveBeenCalled();
+    expect((result.content[0] as { text: string }).text).toContain("Mirror-only admin path");
+  });
+
+  it("lcm_mirror_search denies non-bootstrap caller when shared knowledge is disabled", async () => {
+    const deps = makeDeps();
+    deps.mirrorConfig.sharedKnowledgeEnabled = false;
+    deps.mirrorConfig.assembleSharedKnowledge = false;
+    const tool = createLcmMirrorSearchTool({
+      deps,
+      lcm: makeLcmStub() as never,
+      sessionKey: "agent:research:main",
+    });
+    const result = await tool.execute("call-8", { query: "release", limit: 10 });
+    expect((result.details as { error?: string }).error).toContain("LCM_ADMIN_AGENT_IDS");
+    expect(agentHasRoleMock).not.toHaveBeenCalled();
+  });
 });

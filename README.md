@@ -145,11 +145,11 @@ Without these variables (or with `LCM_MIRROR_ENABLED=false`), the plugin behaves
 | `LCM_MIRROR_QUEUE_CONCURRENCY` | `1` | Concurrent mirror write jobs (1–8) |
 | `LCM_MIRROR_MAX_RETRIES` | `4` | Retry count per mirror job (exponential backoff) |
 | `LCM_MIRROR_AGENT_PG_MAP` | `{}` | JSON map of `agentId` to PG connection string, for per-agent routing |
-| `LCM_SHARED_KNOWLEDGE_ENABLED` | `true` when mirror enabled | Enable shared-knowledge tools and role-based PG read layer |
+| `LCM_SHARED_KNOWLEDGE_ENABLED` | `true` when mirror enabled | Enable shared-knowledge tools and role-based PG read layer. Set `false` for mirror-only mode. |
 | `LCM_ASSEMBLE_SHARED_KNOWLEDGE` | `true` | Enable assemble-time shared knowledge injection |
 | `LCM_ASSEMBLE_SK_LIMIT` | `5` | Max shared-knowledge entries injected into assemble |
 | `LCM_ASSEMBLE_SK_MAX_TOKENS` | `2000` | Token budget cap for assemble shared-knowledge block |
-| `LCM_ASSEMBLE_SK_TIMEOUT_MS` | `500` | Timeout for shared-knowledge lookup during assemble |
+| `LCM_ASSEMBLE_SK_TIMEOUT_MS` | `2000` | Timeout for shared-knowledge lookup during assemble |
 | `LCM_ADMIN_ROLE_NAME` | `admin` | Role-group name used as admin authority |
 | `LCM_ADMIN_AGENT_IDS` | `main` | Bootstrap admin agent IDs used for first-run role seeding |
 | `LCM_ROLE_BOOTSTRAP_MAP` | built-in map | JSON map of `agentId -> role[]` for idempotent startup seeding |
@@ -165,6 +165,27 @@ When `LCM_SHARED_KNOWLEDGE_ENABLED=true`, the plugin must resolve **one shared P
 3. Exactly one unique mirror URL across map + default
 
 If none of the above applies, shared knowledge is disabled at startup with an explicit error log.
+
+### Mirror-only mode (disable shared knowledge)
+
+By default, enabling mirror also enables shared knowledge for backward compatibility.  
+If you want **mirror only** (`lcm_mirror` write/read path, without role tables/tools/assemble injection), set:
+
+```bash
+export LCM_MIRROR_ENABLED=true
+export LCM_SHARED_KNOWLEDGE_ENABLED=false
+```
+
+With this setting:
+
+- shared-knowledge tools are not registered
+- assemble does not inject shared knowledge
+- `lcm_mirror_search` admin authorization uses `LCM_ADMIN_AGENT_IDS` (`mirrorAdminAgents`), not `knowledge_roles`
+
+### Assemble timeout tuning
+
+`LCM_ASSEMBLE_SK_TIMEOUT_MS` defaults to `2000ms`.  
+For remote/managed PG with higher latency, tune to `3000-5000ms` to reduce skipped injection due to timeout.
 
 ### Managed Postgres note
 
