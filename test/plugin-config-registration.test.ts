@@ -396,6 +396,33 @@ describe("lcm plugin registration", () => {
     ].sort());
     expect(secondMessages).toEqual([]);
   });
+
+  it("registers M4 PG tools when mirror and shared knowledge are enabled", () => {
+    const { api } = buildApi({
+      enabled: true,
+      mirrorEnabled: true,
+      sharedKnowledgeEnabled: true,
+    });
+
+    lcmPlugin.register(api);
+
+    const callbacks = (api.registerTool as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .map((call) => call[0] as (ctx: { sessionKey?: string }) => { name: string });
+    const tools = callbacks.map((factory) => factory({ sessionKey: "agent:main:main" }));
+    const names = tools.map((tool) => tool.name);
+
+    expect(names).toEqual(expect.arrayContaining([
+      "lcm_grep",
+      "lcm_describe",
+      "lcm_expand",
+      "lcm_expand_query",
+      "lcm_mirror_search",
+      "lcm_manage_roles",
+      "lcm_shared_knowledge_write",
+      "lcm_shared_knowledge_search",
+    ]));
+  });
+
   it("registers without runtime.modelAuth on older OpenClaw runtimes", () => {
     const { api, getFactory, warnLog } = buildApi(
       {

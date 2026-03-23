@@ -1,5 +1,13 @@
 import type { LcmMirrorConfig, LcmMirrorMode } from "./types.js";
 
+const DEFAULT_ADMIN_ROLE = "admin";
+const DEFAULT_BOOTSTRAP_ADMIN_AGENT_IDS = ["main"];
+const DEFAULT_ROLE_BOOTSTRAP_MAP: Record<string, string[]> = {
+  main: [DEFAULT_ADMIN_ROLE],
+  research: ["researcher"],
+  email: ["personal-ops"],
+};
+
 function toStr(value: unknown): string | undefined {
   if (typeof value === "string") {
     const t = value.trim();
@@ -22,6 +30,36 @@ function toNumber(value: unknown): number | undefined {
     if (Number.isFinite(n)) return n;
   }
   return undefined;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function uniqueStrings(values: Iterable<string>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
 }
 
 function parseAgentPgMapJson(raw: string | undefined): Record<string, string> {
@@ -50,6 +88,51 @@ function normalizeMode(value: string | undefined): LcmMirrorMode {
     return "root_view";
   }
   return "latest_nodes";
+}
+
+function parseRoleBootstrapMapValue(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const out: Record<string, string[]> = {};
+  for (const [rawAgentId, rawRoles] of Object.entries(value as Record<string, unknown>)) {
+    const agentId = rawAgentId.trim();
+    if (!agentId) {
+      continue;
+    }
+    const roles = uniqueStrings(toStringArray(rawRoles));
+    if (roles.length === 0) {
+      continue;
+    }
+    out[agentId] = roles;
+  }
+  return out;
+}
+
+function parseRoleBootstrapMapJson(raw: string | undefined): Record<string, string[]> {
+  if (!raw?.trim()) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parseRoleBootstrapMapValue(parsed);
+  } catch {
+    return {};
+  }
+}
+
+function mergeRoleBootstrapMaps(
+  base: Record<string, string[]>,
+  extra: Record<string, string[]>,
+): Record<string, string[]> {
+  const merged: Record<string, string[]> = {};
+  for (const [agentId, roles] of Object.entries(base)) {
+    merged[agentId] = uniqueStrings(roles);
+  }
+  for (const [agentId, roles] of Object.entries(extra)) {
+    merged[agentId] = uniqueStrings([...(merged[agentId] ?? []), ...roles]);
+  }
+  return merged;
 }
 
 /**
@@ -105,6 +188,66 @@ export function resolveLcmMirrorConfig(
     toNumber(pc.mirrorMaxRetries) ??
     4;
 
+  const sharedKnowledgeEnabled =
+    env.LCM_SHARED_KNOWLEDGE_ENABLED !== undefined
+      ? env.LCM_SHARED_KNOWLEDGE_ENABLED === "true"
+      : (toBool(pc.sharedKnowledgeEnabled ?? pc.mirrorSharedKnowledgeEnabled) ?? enabled);
+
+  const rawAssembleSharedKnowledge =
+    env.LCM_ASSEMBLE_SHARED_KNOWLEDGE !== undefined
+      ? env.LCM_ASSEMBLE_SHARED_KNOWLEDGE === "true"
+      : (toBool(pc.assembleSharedKnowledge ?? pc.mirrorAssembleSharedKnowledge) ?? true);
+
+  const assembleSharedKnowledgeMaxTokens =
+    (env.LCM_ASSEMBLE_SK_MAX_TOKENS !== undefined
+      ? parseInt(env.LCM_ASSEMBLE_SK_MAX_TOKENS, 10)
+      : undefined) ??
+    toNumber(pc.assembleSkMaxTokens ?? pc.mirrorAssembleSkMaxTokens) ??
+    2000;
+
+  const assembleSharedKnowledgeLimit =
+    (env.LCM_ASSEMBLE_SK_LIMIT !== undefined ? parseInt(env.LCM_ASSEMBLE_SK_LIMIT, 10) : undefined) ??
+    toNumber(pc.assembleSkLimit ?? pc.mirrorAssembleSkLimit) ??
+    5;
+
+  const assembleSharedKnowledgeTimeoutMs =
+    (env.LCM_ASSEMBLE_SK_TIMEOUT_MS !== undefined
+      ? parseInt(env.LCM_ASSEMBLE_SK_TIMEOUT_MS, 10)
+      : undefined) ??
+    toNumber(pc.assembleSkTimeoutMs ?? pc.mirrorAssembleSkTimeoutMs) ??
+    500;
+
+  const adminRoleName =
+    env.LCM_ADMIN_ROLE_NAME?.trim() ??
+    toStr(pc.adminRoleName ?? pc.mirrorAdminRoleName) ??
+    DEFAULT_ADMIN_ROLE;
+
+  const bootstrapAdminAgentIds = uniqueStrings(
+    env.LCM_ADMIN_AGENT_IDS !== undefined
+      ? toStringArray(env.LCM_ADMIN_AGENT_IDS)
+      : toStringArray(pc.mirrorAdminAgents ?? DEFAULT_BOOTSTRAP_ADMIN_AGENT_IDS),
+  );
+
+  const roleBootstrapMapFromEnv =
+    env.LCM_ROLE_BOOTSTRAP_MAP !== undefined
+      ? parseRoleBootstrapMapJson(env.LCM_ROLE_BOOTSTRAP_MAP)
+      : {};
+  const roleBootstrapMapFromConfig =
+    env.LCM_ROLE_BOOTSTRAP_MAP !== undefined
+      ? {}
+      : parseRoleBootstrapMapValue(pc.roleBootstrapMap ?? pc.mirrorRoleBootstrapMap);
+  const roleBootstrapMap = mergeRoleBootstrapMaps(
+    mergeRoleBootstrapMaps(DEFAULT_ROLE_BOOTSTRAP_MAP, roleBootstrapMapFromConfig),
+    roleBootstrapMapFromEnv,
+  );
+  const seededRoleBootstrapMap = { ...roleBootstrapMap };
+  for (const agentId of bootstrapAdminAgentIds) {
+    seededRoleBootstrapMap[agentId] = uniqueStrings([
+      ...(seededRoleBootstrapMap[agentId] ?? []),
+      adminRoleName,
+    ]);
+  }
+
   return {
     enabled,
     databaseUrl,
@@ -113,6 +256,21 @@ export function resolveLcmMirrorConfig(
     maxNodes: Math.max(1, Math.min(50, Math.floor(maxNodes))),
     queueConcurrency: Math.max(1, Math.min(8, Math.floor(queueConcurrency))),
     maxRetries: Math.max(0, Math.min(10, Math.floor(maxRetries))),
+    sharedKnowledgeEnabled: enabled && sharedKnowledgeEnabled,
+    assembleSharedKnowledge: enabled && sharedKnowledgeEnabled && rawAssembleSharedKnowledge,
+    assembleSharedKnowledgeMaxTokens: Math.max(
+      200,
+      Math.min(32_000, Math.floor(assembleSharedKnowledgeMaxTokens)),
+    ),
+    assembleSharedKnowledgeLimit: Math.max(1, Math.min(20, Math.floor(assembleSharedKnowledgeLimit))),
+    assembleSharedKnowledgeTimeoutMs: Math.max(
+      50,
+      Math.min(30_000, Math.floor(assembleSharedKnowledgeTimeoutMs)),
+    ),
+    adminRoleName: adminRoleName.trim() || DEFAULT_ADMIN_ROLE,
+    bootstrapAdminAgentIds:
+      bootstrapAdminAgentIds.length > 0 ? bootstrapAdminAgentIds : [...DEFAULT_BOOTSTRAP_ADMIN_AGENT_IDS],
+    roleBootstrapMap: seededRoleBootstrapMap,
   };
 }
 
@@ -122,4 +280,28 @@ export function resolveMirrorDatabaseUrl(config: LcmMirrorConfig, agentId: strin
     return fromAgent.trim();
   }
   return config.databaseUrl?.trim();
+}
+
+export function resolveAllMirrorDatabaseUrls(config: LcmMirrorConfig): string[] {
+  const urls = [
+    config.databaseUrl?.trim(),
+    ...Object.values(config.agentDatabaseUrls).map((value) => value.trim()),
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+  return uniqueStrings(urls);
+}
+
+/**
+ * Shared knowledge is global across agents, so we prefer the `main` URL.
+ */
+export function resolveSharedKnowledgeDatabaseUrl(config: LcmMirrorConfig): string | undefined {
+  const mainUrl = config.agentDatabaseUrls.main?.trim();
+  if (mainUrl) {
+    return mainUrl;
+  }
+  const defaultUrl = config.databaseUrl?.trim();
+  if (defaultUrl) {
+    return defaultUrl;
+  }
+  const urls = resolveAllMirrorDatabaseUrls(config);
+  return urls.length === 1 ? urls[0] : undefined;
 }

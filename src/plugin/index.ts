@@ -16,6 +16,10 @@ import { createLcmDescribeTool } from "../tools/lcm-describe-tool.js";
 import { createLcmExpandQueryTool } from "../tools/lcm-expand-query-tool.js";
 import { createLcmExpandTool } from "../tools/lcm-expand-tool.js";
 import { createLcmGrepTool } from "../tools/lcm-grep-tool.js";
+import { createLcmManageRolesTool } from "../tools/lcm-manage-roles-tool.js";
+import { createLcmMirrorSearchTool } from "../tools/lcm-mirror-search-tool.js";
+import { createLcmSharedKnowledgeSearchTool } from "../tools/lcm-shared-knowledge-search-tool.js";
+import { createLcmSharedKnowledgeWriteTool } from "../tools/lcm-shared-knowledge-write-tool.js";
 import type { LcmDependencies } from "../types.js";
 
 /** Parse `agent:<agentId>:<suffix...>` session keys. */
@@ -1357,6 +1361,42 @@ const lcmPlugin = {
         requesterSessionKey: ctx.sessionKey,
       }),
     );
+    if (deps.mirrorConfig.enabled) {
+      api.registerTool((ctx) =>
+        createLcmMirrorSearchTool({
+          deps,
+          lcm,
+          sessionKey: ctx.sessionKey,
+          sessionId: (ctx as { sessionId?: string }).sessionId,
+        }),
+      );
+    }
+    if (deps.mirrorConfig.enabled && deps.mirrorConfig.sharedKnowledgeEnabled) {
+      api.registerTool((ctx) =>
+        createLcmManageRolesTool({
+          deps,
+          lcm,
+          sessionKey: ctx.sessionKey,
+          sessionId: (ctx as { sessionId?: string }).sessionId,
+        }),
+      );
+      api.registerTool((ctx) =>
+        createLcmSharedKnowledgeWriteTool({
+          deps,
+          lcm,
+          sessionKey: ctx.sessionKey,
+          sessionId: (ctx as { sessionId?: string }).sessionId,
+        }),
+      );
+      api.registerTool((ctx) =>
+        createLcmSharedKnowledgeSearchTool({
+          deps,
+          lcm,
+          sessionKey: ctx.sessionKey,
+          sessionId: (ctx as { sessionId?: string }).sessionId,
+        }),
+      );
+    }
 
     logStartupBannerOnce({
       key: "plugin-loaded",
@@ -1369,6 +1409,15 @@ const lcmPlugin = {
         log: (message) => api.logger.info(message),
         message: `[lcm] PG mirror enabled (mode=${deps.mirrorConfig.mode}, maxNodes=${deps.mirrorConfig.maxNodes}); set LCM_MIRROR_DATABASE_URL or mirrorAgentDatabaseUrls`,
       });
+      if (deps.mirrorConfig.sharedKnowledgeEnabled) {
+        logStartupBannerOnce({
+          key: "shared-knowledge-enabled",
+          log: (message) => api.logger.info(message),
+          message:
+            `[lcm] Shared knowledge enabled ` +
+            `(assemble=${deps.mirrorConfig.assembleSharedKnowledge}, limit=${deps.mirrorConfig.assembleSharedKnowledgeLimit}, maxTokens=${deps.mirrorConfig.assembleSharedKnowledgeMaxTokens})`,
+        });
+      }
     }
     logStartupBannerOnce({
       key: "compaction-model",

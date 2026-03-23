@@ -36,7 +36,12 @@ import {
   parseFileBlocks,
 } from "./large-files.js";
 import { extractMirrorPayload } from "./mirror/extract.js";
-import { resolveMirrorDatabaseUrl } from "./mirror/config.js";
+import { resolveMirrorDatabaseUrl, resolveSharedKnowledgeDatabaseUrl } from "./mirror/config.js";
+import {
+  ensureSharedKnowledgeTables,
+  searchSharedKnowledge,
+  seedKnowledgeRoles,
+} from "./mirror/pg-reader.js";
 import { MirrorQueue } from "./mirror/queue.js";
 import { closeAllMirrorPools, upsertLcmMirrorRow } from "./mirror/pg-sink.js";
 import { RetrievalEngine } from "./retrieval.js";
@@ -61,6 +66,23 @@ type AssembleResultWithSystemPrompt = AssembleResult & { systemPromptAddition?: 
 /** Rough token estimate: ~4 chars per token. */
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle !== undefined) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 }
 
 function toJson(value: unknown): string {
@@ -1311,6 +1333,104 @@ export class LcmContextEngine implements ContextEngine {
     }
   }
 
+  private resolveAssembleAgentId(params: {
+    sessionKey?: string;
+    conversation: ConversationRecord;
+  }): string | null {
+    const candidates = [
+      params.sessionKey?.trim(),
+      params.conversation.sessionKey?.trim() ?? undefined,
+    ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
+
+    for (const candidate of candidates) {
+      const parsed = this.deps.parseAgentSessionKey(candidate);
+      const parsedAgentId = parsed?.agentId?.trim();
+      if (!parsedAgentId) {
+        continue;
+      }
+      return this.deps.normalizeAgentId(parsedAgentId);
+    }
+    return null;
+  }
+
+  private extractLatestUserMessageText(messages: AgentMessage[]): string | undefined {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (!message || message.role !== "user") {
+        continue;
+      }
+      const content = extractMessageContent(message.content).trim();
+      if (content.length > 0) {
+        return content;
+      }
+    }
+    return undefined;
+  }
+
+  private async buildSharedKnowledgePromptAddition(params: {
+    agentId: string;
+    query: string;
+  }): Promise<string | undefined> {
+    if (
+      !this.deps.mirrorConfig.enabled
+      || !this.deps.mirrorConfig.sharedKnowledgeEnabled
+      || !this.deps.mirrorConfig.assembleSharedKnowledge
+    ) {
+      return undefined;
+    }
+    const connectionString = resolveSharedKnowledgeDatabaseUrl(this.deps.mirrorConfig);
+    if (!connectionString) {
+      return undefined;
+    }
+    await ensureSharedKnowledgeTables(connectionString);
+    await seedKnowledgeRoles(connectionString, this.deps.mirrorConfig.roleBootstrapMap);
+
+    const rows = await withTimeout(
+      searchSharedKnowledge(connectionString, {
+        agentId: params.agentId,
+        adminRoleName: this.deps.mirrorConfig.adminRoleName,
+        query: params.query.trim(),
+        limit: this.deps.mirrorConfig.assembleSharedKnowledgeLimit,
+      }),
+      this.deps.mirrorConfig.assembleSharedKnowledgeTimeoutMs,
+    );
+    if (rows.length === 0) {
+      return undefined;
+    }
+
+    const maxTokens = this.deps.mirrorConfig.assembleSharedKnowledgeMaxTokens;
+    const lines: string[] = ["## Workspace Shared Knowledge"];
+    let estimatedTokens = estimateTokens(lines.join("\n"));
+    let added = 0;
+    for (const row of rows) {
+      const entryLines = [
+        `### ${row.title?.trim() || "Knowledge Entry"}`,
+        row.content.trim(),
+        row.tags.length > 0 ? `tags: ${row.tags.join(", ")}` : "",
+      ].filter(Boolean);
+      const section = entryLines.join("\n");
+      const sectionTokens = estimateTokens(section);
+      if (added > 0 && estimatedTokens + sectionTokens > maxTokens) {
+        break;
+      }
+      if (added === 0 && sectionTokens > maxTokens) {
+        const maxChars = Math.max(200, maxTokens * 4);
+        const shortened = section.length > maxChars ? `${section.slice(0, maxChars - 3)}...` : section;
+        lines.push(shortened);
+        estimatedTokens += estimateTokens(shortened);
+        added += 1;
+        break;
+      }
+      lines.push(section);
+      estimatedTokens += sectionTokens;
+      added += 1;
+    }
+    if (added === 0) {
+      return undefined;
+    }
+    return lines.join("\n\n");
+  }
+
   /** Resolve an LCM conversation id from a session key via the session store. */
   private async resolveConversationIdForSessionKey(
     sessionKey: string,
@@ -2368,6 +2488,43 @@ export class LcmContextEngine implements ContextEngine {
           ? { systemPromptAddition: assembled.systemPromptAddition }
           : {}),
       };
+
+      if (
+        this.deps.mirrorConfig.enabled
+        && this.deps.mirrorConfig.sharedKnowledgeEnabled
+        && this.deps.mirrorConfig.assembleSharedKnowledge
+      ) {
+        const callerAgentId = this.resolveAssembleAgentId({
+          sessionKey: params.sessionKey,
+          conversation,
+        });
+        if (!callerAgentId) {
+          this.deps.log.warn(
+            `[lcm] shared-knowledge assemble: skip (unable to resolve caller agent for sessionId=${params.sessionId})`,
+          );
+        } else {
+          const query = this.extractLatestUserMessageText(params.messages);
+          if (query) {
+            try {
+              const sharedAddition = await this.buildSharedKnowledgePromptAddition({
+                agentId: callerAgentId,
+                query,
+              });
+              if (sharedAddition) {
+                result.systemPromptAddition = result.systemPromptAddition
+                  ? `${result.systemPromptAddition}\n\n${sharedAddition}`
+                  : sharedAddition;
+              }
+            } catch (error) {
+              this.deps.log.warn(
+                `[lcm] shared-knowledge assemble: skipped due to error: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
+        }
+      }
       return result;
     } catch {
       return {

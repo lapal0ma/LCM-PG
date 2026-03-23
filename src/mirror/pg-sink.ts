@@ -1,9 +1,7 @@
 import type { LcmMirrorRow } from "./types.js";
-
-type PgModule = typeof import("pg");
+import { closeAllPgPools, getOrCreatePgPool, loadPg } from "./pg-common.js";
 
 const ensuredUrls = new Set<string>();
-const pools = new Map<string, InstanceType<PgModule["Pool"]>>();
 
 const DDL = `
 CREATE TABLE IF NOT EXISTS lcm_mirror (
@@ -25,47 +23,20 @@ CREATE INDEX IF NOT EXISTS lcm_mirror_session_key_idx ON lcm_mirror (session_key
 CREATE INDEX IF NOT EXISTS lcm_mirror_agent_idx ON lcm_mirror (agent_id, ingested_at DESC);
 `.trim();
 
-async function loadPg(): Promise<PgModule | null> {
-  try {
-    return await import("pg");
-  } catch {
-    return null;
-  }
-}
-
-function getPool(pg: PgModule, connectionString: string): InstanceType<PgModule["Pool"]> {
-  let pool = pools.get(connectionString);
-  if (!pool) {
-    pool = new pg.Pool({
-      connectionString,
-      max: 4,
-      idleTimeoutMillis: 30_000,
-    });
-    pools.set(connectionString, pool);
-  }
-  return pool;
-}
-
 export async function ensureLcmMirrorTable(connectionString: string): Promise<void> {
   if (ensuredUrls.has(connectionString)) {
     return;
   }
   const pg = await loadPg();
-  if (!pg) {
-    throw new Error("Optional dependency `pg` is not installed; install it to use LCM_MIRROR_*");
-  }
-  const pool = getPool(pg, connectionString);
+  const pool = getOrCreatePgPool(pg, { connectionString });
   await pool.query(DDL);
   ensuredUrls.add(connectionString);
 }
 
 export async function upsertLcmMirrorRow(connectionString: string, row: LcmMirrorRow): Promise<void> {
   const pg = await loadPg();
-  if (!pg) {
-    throw new Error("Optional dependency `pg` is not installed; install it to use LCM_MIRROR_*");
-  }
   await ensureLcmMirrorTable(connectionString);
-  const pool = getPool(pg, connectionString);
+  const pool = getOrCreatePgPool(pg, { connectionString });
   await pool.query(
     `INSERT INTO lcm_mirror (
        session_key, conversation_id, agent_id, mode, content, summary_ids, content_hash, session_id, captured_at
@@ -87,8 +58,6 @@ export async function upsertLcmMirrorRow(connectionString: string, row: LcmMirro
 
 /** For tests / graceful shutdown of plugin process. */
 export async function closeAllMirrorPools(): Promise<void> {
-  const closing = [...pools.values()].map((p) => p.end());
-  pools.clear();
+  await closeAllPgPools();
   ensuredUrls.clear();
-  await Promise.all(closing);
 }

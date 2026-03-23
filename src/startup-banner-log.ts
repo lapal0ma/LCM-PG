@@ -1,5 +1,7 @@
 type StartupBannerKey =
   | "plugin-loaded"
+  | "mirror-enabled"
+  | "shared-knowledge-enabled"
   | "compaction-model"
   | "ignore-session-patterns"
   | "stateless-session-patterns";
