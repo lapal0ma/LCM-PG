@@ -22,7 +22,7 @@ const {
   listKnowledgeRolesMock: vi.fn(async () => []),
   assignKnowledgeRoleMock: vi.fn(async () => ({ created: true })),
   revokeKnowledgeRoleMock: vi.fn(async () => ({ deleted: true })),
-  searchMirrorMock: vi.fn(async () => []),
+  searchMirrorMock: vi.fn(async () => ({ rows: [], errors: [] })),
   writeSharedKnowledgeMock: vi.fn(async () => ({
     knowledgeId: "k1",
     ownerAgentId: "main",
@@ -166,7 +166,7 @@ beforeEach(() => {
   listKnowledgeRolesMock.mockResolvedValue([]);
   assignKnowledgeRoleMock.mockResolvedValue({ created: true });
   revokeKnowledgeRoleMock.mockResolvedValue({ deleted: true });
-  searchMirrorMock.mockResolvedValue([]);
+  searchMirrorMock.mockResolvedValue({ rows: [], errors: [] });
   writeSharedKnowledgeMock.mockResolvedValue({
     knowledgeId: "k1",
     ownerAgentId: "main",
@@ -266,18 +266,21 @@ describe("M4 tools", () => {
 
   it("lcm_mirror_search enforces admin check and formats result table", async () => {
     agentHasRoleMock.mockResolvedValue(true);
-    searchMirrorMock.mockResolvedValue([
-      {
-        mirrorId: "m1",
-        sessionKey: "agent:research:main",
-        conversationId: 42,
-        agentId: "research",
-        mode: "latest_nodes",
-        content: "Compacted summary for release risk",
-        capturedAt: new Date("2026-03-03T00:00:00.000Z"),
-        sourceUrl: "postgresql://main:test@localhost:5432/lcm_main",
-      },
-    ]);
+    searchMirrorMock.mockResolvedValue({
+      rows: [
+        {
+          mirrorId: "m1",
+          sessionKey: "agent:research:main",
+          conversationId: 42,
+          agentId: "research",
+          mode: "latest_nodes",
+          content: "Compacted summary for release risk",
+          capturedAt: new Date("2026-03-03T00:00:00.000Z"),
+          sourceUrl: "postgresql://main:test@localhost:5432/lcm_main",
+        },
+      ],
+      errors: [],
+    });
     const tool = createLcmMirrorSearchTool({
       deps: makeDeps(),
       lcm: makeLcmStub() as never,
@@ -296,5 +299,33 @@ describe("M4 tools", () => {
     );
     expect((result.content[0] as { text: string }).text).toContain("| captured_at | agent_id |");
     expect((result.content[0] as { text: string }).text).toContain("research");
+  });
+
+  it("lcm_mirror_search surfaces partial mirror failures in output and details", async () => {
+    agentHasRoleMock.mockResolvedValue(true);
+    const deps = makeDeps();
+    searchMirrorMock.mockResolvedValue({
+      rows: [],
+      errors: [
+        {
+          sourceUrl: "postgresql://invalid-host:5432/lcm_bad",
+          message: "connect ECONNREFUSED",
+        },
+      ],
+    });
+    const tool = createLcmMirrorSearchTool({
+      deps,
+      lcm: makeLcmStub() as never,
+      sessionKey: "agent:main:main",
+    });
+    const result = await tool.execute("call-6", { query: "release", limit: 20 });
+    expect((result.content[0] as { text: string }).text).toContain("partial_failures=1");
+    expect((result.content[0] as { text: string }).text).toContain(
+      "postgresql://invalid-host:5432/lcm_bad",
+    );
+    expect((result.details as { errors?: unknown[] }).errors).toHaveLength(1);
+    expect(deps.log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("lcm_mirror_search partial failure on postgresql://invalid-host:5432/lcm_bad"),
+    );
   });
 });

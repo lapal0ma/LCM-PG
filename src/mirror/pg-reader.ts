@@ -110,6 +110,16 @@ export type MirrorSearchRow = {
   sourceUrl: string;
 };
 
+export type MirrorSearchError = {
+  sourceUrl: string;
+  message: string;
+};
+
+export type MirrorSearchResult = {
+  rows: MirrorSearchRow[];
+  errors: MirrorSearchError[];
+};
+
 export type SharedKnowledgeSearchOptions = {
   agentId: string;
   adminRoleName: string;
@@ -182,6 +192,14 @@ function asString(value: unknown): string {
 function asNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function toContainsPattern(value: string): string {
+  return `%${escapeLikePattern(value)}%`;
 }
 
 async function withPgClient<T>(
@@ -372,7 +390,7 @@ async function searchMirrorInOneDatabase(
     return client.query(
       `SELECT mirror_id, session_key, conversation_id, agent_id, mode, content, captured_at
        FROM lcm_mirror
-       WHERE ($1 = '' OR content ILIKE $2)
+       WHERE ($1 = '' OR content ILIKE $2 ESCAPE '\\')
          AND ($3::text IS NULL OR agent_id = $3)
          AND ($4::timestamptz IS NULL OR captured_at >= $4)
          AND ($5::timestamptz IS NULL OR captured_at < $5)
@@ -380,7 +398,7 @@ async function searchMirrorInOneDatabase(
        LIMIT $6`,
       [
         queryText,
-        `%${queryText}%`,
+        toContainsPattern(queryText),
         options.agentId?.trim() || null,
         options.since?.toISOString() ?? null,
         options.before?.toISOString() ?? null,
@@ -404,26 +422,48 @@ async function searchMirrorInOneDatabase(
 export async function searchMirror(
   connectionStrings: string[],
   options: MirrorSearchOptions,
-): Promise<MirrorSearchRow[]> {
+): Promise<MirrorSearchResult> {
   const uniqueUrls = normalizeArray(connectionStrings);
   if (uniqueUrls.length === 0) {
-    return [];
+    return { rows: [], errors: [] };
   }
   const limit = Math.max(1, Math.min(100, Math.trunc(options.limit ?? 20)));
   const perDatabaseLimit = Math.max(limit, 20);
-  const allRows = await Promise.all(
-    uniqueUrls.map((url) =>
-      searchMirrorInOneDatabase(url, {
-        ...options,
-        limit: perDatabaseLimit,
-      }).catch(() => []),
-    ),
+  const settled = await Promise.all(
+    uniqueUrls.map(async (url) => {
+      try {
+        const rows = await searchMirrorInOneDatabase(url, {
+          ...options,
+          limit: perDatabaseLimit,
+        });
+        return {
+          sourceUrl: url,
+          rows,
+          error: null,
+        };
+      } catch (error) {
+        return {
+          sourceUrl: url,
+          rows: [] as MirrorSearchRow[],
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }),
   );
 
-  return allRows
-    .flat()
+  const rows = settled
+    .flatMap((entry) => entry.rows)
     .sort((a, b) => b.capturedAt.getTime() - a.capturedAt.getTime())
     .slice(0, limit);
+  const errors = settled
+    .filter((entry): entry is { sourceUrl: string; rows: MirrorSearchRow[]; error: string } =>
+      typeof entry.error === "string" && entry.error.length > 0
+    )
+    .map((entry) => ({
+      sourceUrl: entry.sourceUrl,
+      message: entry.error,
+    }));
+  return { rows, errors };
 }
 
 function mapSharedKnowledgeRow(row: Record<string, unknown>): SharedKnowledgeRow {
@@ -501,13 +541,13 @@ export async function searchSharedKnowledge(
            knowledge_id, owner_agent_id, visibility, visible_to, editable_by, title, content,
            source_mirror_ids, tags, created_at, updated_at
          FROM shared_knowledge
-         WHERE ($1 = '' OR COALESCE(title, '') ILIKE $2 OR content ILIKE $2)
+         WHERE ($1 = '' OR COALESCE(title, '') ILIKE $2 ESCAPE '\\' OR content ILIKE $2 ESCAPE '\\')
            AND ($3::text[] IS NULL OR tags @> $3::text[])
          ORDER BY updated_at DESC
          LIMIT $4`,
         [
           queryText,
-          `%${queryText}%`,
+          toContainsPattern(queryText),
           tags.length > 0 ? tags : null,
           limit,
         ],

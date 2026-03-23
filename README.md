@@ -171,6 +171,22 @@ If none of the above applies, shared knowledge is disabled at startup with an ex
 Shared knowledge schema initialization does **not** run `CREATE EXTENSION pgcrypto`.  
 `shared_knowledge.knowledge_id` is generated in application code, so managed Postgres environments that block extension creation are supported.
 
+### Security model for `knowledge_roles`
+
+`knowledge_roles` currently does **not** enable RLS. The M4 design assumes:
+
+- a dedicated application DB user for LCM-PG runtime access
+- no broad ad-hoc `SELECT` grants (human users, BI tooling, shared read-only roles) on the app schema
+
+If your environment requires broader database visibility, add stricter DB-role isolation (and optional table-level RLS hardening) before exposing production data.
+
+### Search wildcard behavior
+
+For both `lcm_mirror` search and `shared_knowledge` search, user query text is treated as a literal substring match.
+
+- `%` and `_` are escaped and **do not** act as SQL wildcards
+- search remains case-insensitive (`ILIKE`)
+
 ### LCM core configuration
 
 LCM core settings (`LCM_FRESH_TAIL_COUNT`, `LCM_CONTEXT_THRESHOLD`, session patterns, expansion model overrides, etc.) are unchanged from upstream. See [README_orig.md](README_orig.md) for the full reference.

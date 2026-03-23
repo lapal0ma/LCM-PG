@@ -127,7 +127,7 @@ export function createLcmMirrorSearchTool(input: {
           });
         }
 
-        const rows = await searchMirror(urls, {
+        const { rows, errors } = await searchMirror(urls, {
           query,
           agentId,
           since,
@@ -139,7 +139,20 @@ export function createLcmMirrorSearchTool(input: {
         lines.push("## LCM Mirror Search");
         lines.push(`query=\`${query}\``);
         lines.push(`results=${rows.length}`);
+        if (errors.length > 0) {
+          lines.push(`partial_failures=${errors.length}`);
+        }
         lines.push("");
+        if (errors.length > 0) {
+          lines.push("Partial mirror failures:");
+          for (const failure of errors) {
+            lines.push(`- ${failure.sourceUrl}: ${failure.message}`);
+            input.deps.log.warn(
+              `[lcm] lcm_mirror_search partial failure on ${failure.sourceUrl}: ${failure.message}`,
+            );
+          }
+          lines.push("");
+        }
         if (rows.length === 0) {
           lines.push("No mirror rows matched.");
         } else {
@@ -156,7 +169,7 @@ export function createLcmMirrorSearchTool(input: {
 
         return {
           content: [{ type: "text", text: lines.join("\n") }],
-          details: { rows },
+          details: { rows, errors },
         };
       } catch (error) {
         return jsonResult({
