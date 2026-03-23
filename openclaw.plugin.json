@@ -145,6 +145,74 @@
         "additionalProperties": {
           "type": "string"
         }
+      },
+      "sharedKnowledgeEnabled": {
+        "type": "boolean"
+      },
+      "mirrorSharedKnowledgeEnabled": {
+        "type": "boolean"
+      },
+      "assembleSharedKnowledge": {
+        "type": "boolean"
+      },
+      "mirrorAssembleSharedKnowledge": {
+        "type": "boolean"
+      },
+      "assembleSkMaxTokens": {
+        "type": "integer",
+        "minimum": 200,
+        "maximum": 32000
+      },
+      "mirrorAssembleSkMaxTokens": {
+        "type": "integer",
+        "minimum": 200,
+        "maximum": 32000
+      },
+      "assembleSkLimit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+      },
+      "mirrorAssembleSkLimit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20
+      },
+      "assembleSkTimeoutMs": {
+        "type": "integer",
+        "minimum": 50,
+        "maximum": 30000
+      },
+      "mirrorAssembleSkTimeoutMs": {
+        "type": "integer",
+        "minimum": 50,
+        "maximum": 30000
+      },
+      "adminRoleName": {
+        "type": "string"
+      },
+      "mirrorAdminRoleName": {
+        "type": "string"
+      },
+      "mirrorAdminAgents": {
+        "oneOf": [
+          { "type": "string" },
+          { "type": "array", "items": { "type": "string" } }
+        ]
+      },
+      "roleBootstrapMap": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "mirrorRoleBootstrapMap": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     }
   }
