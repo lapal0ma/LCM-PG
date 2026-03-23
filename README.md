@@ -175,7 +175,13 @@ Instead of setting environment variables on every gateway start, you can persist
           "mirrorMode": "latest_nodes",
           "contextThreshold": 0.75,
           "sharedKnowledgeEnabled": true,
-          "mirrorAdminAgents": ["main"]
+          "assembleSharedKnowledge": true,
+          "mirrorAdminAgents": ["main"],
+          "roleBootstrapMap": {
+            "main": ["admin"],
+            "research": ["researcher"],
+            "email": ["personal-ops"]
+          }
         }
       }
     }
@@ -208,6 +214,64 @@ openclaw gateway --force
 | `LCM_CONTEXT_THRESHOLD` | `contextThreshold` |
 
 Env vars always override the config file when both are set.
+
+### Full config schema reference (`openclaw.plugin.json`)
+
+All keys accepted in `plugins.entries.lcm-pg.config` are validated against `openclaw.plugin.json`. The schema uses `"additionalProperties": false` — **unrecognized keys will cause config validation errors** and the gateway may refuse to start cleanly.
+
+<details>
+<summary>Complete accepted keys (click to expand)</summary>
+
+**LCM core:**
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `enabled` | boolean | Enable / disable the entire plugin |
+| `contextThreshold` | number (0–1) | Context window fraction that triggers compaction |
+| `incrementalMaxDepth` | integer (≥ −1) | How deep incremental compaction goes |
+| `freshTailCount` | integer (≥ 1) | Recent messages protected from compaction |
+| `leafMinFanout` | integer (≥ 2) | Leaf-pass minimum fan-out |
+| `condensedMinFanout` | integer (≥ 2) | Condensed-pass minimum fan-out |
+| `condensedMinFanoutHard` | integer (≥ 2) | Hard minimum fan-out |
+| `dbPath` | string | SQLite database path |
+| `ignoreSessionPatterns` | string[] | Session key globs excluded from LCM |
+| `statelessSessionPatterns` | string[] | Session key globs that read but never write |
+| `skipStatelessSessions` | boolean | Skip persistence for matching stateless sessions |
+| `largeFileThresholdTokens` | integer (≥ 1000) | Token threshold for large-file handling |
+| `summaryModel` | string | Model override for summarization |
+| `summaryProvider` | string | Provider override for summarization |
+| `expansionModel` | string | Model override for `lcm_expand_query` |
+| `expansionProvider` | string | Provider override for `lcm_expand_query` |
+
+**PG mirror (M0–M3):**
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `mirrorEnabled` | boolean | Enable async PG mirror |
+| `mirrorDatabaseUrl` | string | PostgreSQL connection string |
+| `mirrorPostgresUrl` | string | Alias for `mirrorDatabaseUrl` |
+| `mirrorMode` | `"latest_nodes"` \| `"root_view"` | Mirror content mode |
+| `mirrorMaxNodes` | integer (1–50) | Max summary nodes per snapshot |
+| `mirrorQueueConcurrency` | integer (1–8) | Concurrent mirror write jobs |
+| `mirrorMaxRetries` | integer (0–10) | Retry count per mirror job |
+| `mirrorAgentDatabaseUrls` | object (string values) | Per-agent PG URL routing |
+
+**Shared knowledge (M4):**
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `sharedKnowledgeEnabled` | boolean | Enable shared-knowledge tools + RLS layer |
+| `assembleSharedKnowledge` | boolean | Inject shared knowledge at assemble time |
+| `assembleSkMaxTokens` | integer (200–32 000) | Token budget for assemble SK block |
+| `assembleSkLimit` | integer (1–20) | Max SK entries injected per assemble |
+| `assembleSkTimeoutMs` | integer (50–30 000) | Timeout for SK lookup during assemble |
+| `adminRoleName` | string | Role-group name treated as admin |
+| `mirrorAdminAgents` | string \| string[] | Bootstrap admin agent IDs |
+| `roleBootstrapMap` | object (`agentId → role[]`) | Idempotent startup role seeding map |
+
+Most M4 keys also accept a `mirror`-prefixed alias (e.g. `mirrorSharedKnowledgeEnabled`, `mirrorAssembleSharedKnowledge`, `mirrorAdminRoleName`, `mirrorRoleBootstrapMap`). The unprefixed form is preferred; aliases exist for backward compatibility.
+
+</details>
 
 ### Shared knowledge URL resolution (important)
 
