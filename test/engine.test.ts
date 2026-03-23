@@ -767,6 +767,27 @@ describe("ConversationStore session reuse", () => {
   });
 });
 
+describe("LcmContextEngine mirror queue wiring", () => {
+  it("constructs the mirror queue with the configured concurrency", () => {
+    const engine = createEngineWithDepsOverrides({
+      mirrorConfig: {
+        enabled: true,
+        databaseUrl: "postgresql://default:test@localhost:5432/lcm_default",
+        agentDatabaseUrls: {},
+        mode: "latest_nodes",
+        maxNodes: 5,
+        queueConcurrency: 3,
+        maxRetries: 4,
+      },
+    });
+
+    expect((engine as unknown as { mirrorQueue: { concurrency: number } | null }).mirrorQueue)
+      .not.toBeNull();
+    expect((engine as unknown as { mirrorQueue: { concurrency: number } }).mirrorQueue.concurrency)
+      .toBe(3);
+  });
+});
+
 describe("LcmContextEngine delegated session continuity", () => {
   it("prepares subagent spawn from an existing conversation found by sessionKey", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "lcm-pg-engine-"));

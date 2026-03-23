@@ -44,6 +44,7 @@ import { compileSessionPatterns, matchesSessionPattern } from "./session-pattern
 import { logStartupBannerOnce } from "./startup-banner-log.js";
 import {
   ConversationStore,
+  type ConversationRecord,
   type CreateMessagePartInput,
   type MessagePartRecord,
   type MessagePartType,
@@ -1030,7 +1031,9 @@ export class LcmContextEngine implements ContextEngine {
       fts5Available: this.fts5Available,
     });
     this.summaryStore = new SummaryStore(this.db, { fts5Available: this.fts5Available });
-    this.mirrorQueue = deps.mirrorConfig.enabled ? new MirrorQueue() : null;
+    this.mirrorQueue = deps.mirrorConfig.enabled
+      ? new MirrorQueue({ concurrency: deps.mirrorConfig.queueConcurrency })
+      : null;
 
     if (!this.fts5Available) {
       this.deps.log.warn(
@@ -1200,22 +1203,10 @@ export class LcmContextEngine implements ContextEngine {
     if (!this.mirrorQueue || !this.deps.mirrorConfig.enabled) {
       return;
     }
-    const sessionKey = params.sessionKey?.trim() ?? "";
-    const parsed = sessionKey ? this.deps.parseAgentSessionKey(sessionKey) : null;
-    const agentId = parsed?.agentId ?? this.deps.normalizeAgentId(undefined);
-    const url = resolveMirrorDatabaseUrl(this.deps.mirrorConfig, agentId);
-    if (!url) {
-      this.deps.log.debug(
-        `[lcm] mirror: skip (no database URL for agent=${agentId}); set LCM_MIRROR_DATABASE_URL or mirrorAgentDatabaseUrls`,
-      );
-      return;
-    }
     this.mirrorQueue.enqueue(() =>
       this.runMirrorJobOnce({
         sessionId: params.sessionId,
-        sessionKey: sessionKey || undefined,
-        agentId,
-        url,
+        sessionKey: params.sessionKey?.trim() || undefined,
       }),
     );
   }
@@ -1223,14 +1214,27 @@ export class LcmContextEngine implements ContextEngine {
   private async runMirrorJobOnce(params: {
     sessionId: string;
     sessionKey?: string;
-    agentId: string;
-    url: string;
   }): Promise<void> {
-    const conversationId = await this.resolveConversationIdForMirror(
+    const conversation = await this.resolveConversationForMirror(
       params.sessionId,
       params.sessionKey,
     );
-    if (conversationId == null) {
+    if (!conversation) {
+      return;
+    }
+    const mirrorIdentity = this.resolveMirrorIdentity({
+      sessionId: params.sessionId,
+      sessionKey: params.sessionKey,
+      conversation,
+    });
+    if (!mirrorIdentity) {
+      return;
+    }
+    const url = resolveMirrorDatabaseUrl(this.deps.mirrorConfig, mirrorIdentity.agentId);
+    if (!url) {
+      this.deps.log.debug(
+        `[lcm] mirror: skip (no database URL for agent=${mirrorIdentity.agentId}); set LCM_MIRROR_DATABASE_URL or mirrorAgentDatabaseUrls`,
+      );
       return;
     }
     let delayMs = 300;
@@ -1239,17 +1243,17 @@ export class LcmContextEngine implements ContextEngine {
       try {
         const row = await extractMirrorPayload({
           summaryStore: this.summaryStore,
-          conversationId,
-          sessionKey: params.sessionKey ?? "",
+          conversationId: conversation.conversationId,
+          sessionKey: mirrorIdentity.sessionKey,
           sessionId: params.sessionId,
-          agentId: params.agentId,
+          agentId: mirrorIdentity.agentId,
           mode: this.deps.mirrorConfig.mode,
           maxNodes: this.deps.mirrorConfig.maxNodes,
         });
         if (!row) {
           return;
         }
-        await upsertLcmMirrorRow(params.url, row);
+        await upsertLcmMirrorRow(url, row);
         return;
       } catch (err) {
         if (attempt + 1 >= maxAttempts) {
@@ -1264,16 +1268,44 @@ export class LcmContextEngine implements ContextEngine {
     }
   }
 
-  private async resolveConversationIdForMirror(
+  private resolveMirrorIdentity(params: {
+    sessionId: string;
+    sessionKey?: string;
+    conversation: ConversationRecord;
+  }): { sessionKey: string; agentId: string } | null {
+    const candidates = [
+      params.sessionKey?.trim(),
+      params.conversation.sessionKey?.trim() ?? undefined,
+    ].filter((value, index, all): value is string => Boolean(value) && all.indexOf(value) === index);
+
+    for (const candidate of candidates) {
+      const parsed = this.deps.parseAgentSessionKey(candidate);
+      const parsedAgentId = parsed?.agentId?.trim();
+      if (!parsedAgentId) {
+        continue;
+      }
+      return {
+        sessionKey: candidate,
+        agentId: this.deps.normalizeAgentId(parsedAgentId),
+      };
+    }
+
+    this.deps.log.warn(
+      `[lcm] mirror: skip (unable to resolve agent identity for sessionId=${params.sessionId}; no parseable sessionKey available)`,
+    );
+    return null;
+  }
+
+  private async resolveConversationForMirror(
     sessionId: string,
     sessionKey?: string,
-  ): Promise<number | undefined> {
+  ): Promise<ConversationRecord | undefined> {
     try {
       const conv = await this.conversationStore.getConversationForSession({
         sessionId,
         sessionKey,
       });
-      return conv?.conversationId;
+      return conv ?? undefined;
     } catch {
       return undefined;
     }
