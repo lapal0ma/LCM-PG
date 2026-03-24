@@ -1,8 +1,8 @@
 # LCM-PG Dashboard Demo Flow + Mock Data Flow Plan (Draft)
 # LCM-PG 看板演示流程与模拟数据流方案（草案）
 
-Status: Draft for review by human + Cursor(Opus 4.6).
-状态：供你与 Cursor(Opus 4.6) 联合评审的草案。
+Status: Product decisions for v1 recorded (see §8). Implementation can proceed against `main`.
+状态：v1 产品决策已记录在 §8，可按 `main` 继续落地实现。
 
 ---
 
@@ -176,6 +176,8 @@ Mode 2: Full synthetic playback
 - Seed all rows directly into `lcm_mirror` + `shared_knowledge`.
 - Use deterministic timestamps for repeatable charts.
 
+**v1 decision:** prioritize **Mode 2 (full synthetic playback)** first. Mode 1 (live-assisted mock) remains documented for later or hybrid demos.
+
 ### 5.2 Mock Data Targets (v1)
 
 - Agents: `infra`, `finance`, `security`, `main`
@@ -214,6 +216,8 @@ Suggested topic tags:
 
 - 直接向 `lcm_mirror` + `shared_knowledge` 注入模拟数据。
 - 使用固定时间分布，保证图表可复现。
+
+**v1 决策：** 优先采用 **模式 2（全量模拟回放）**。模式 1 仍保留文档，供后续或混合演示使用。
 
 ### 5.2 模拟数据规模（v1）
 
@@ -322,25 +326,29 @@ Narrative:
 
 ---
 
-## 8) Review Questions for You + Cursor / 供你与 Cursor 评审的问题
+## 8) v1 Product decisions (recorded) / v1 产品决策（已记录）
 
 ### EN
 
-1. Should v1 dashboard focus on static SQL views only, or include a lightweight API layer?
-2. Do we want "tenant/workspace" filters now, or keep single-workspace for demo?
-3. Should topic extraction rely only on `tags`, or also parse `content` keywords in v1?
-4. Do we prioritize full synthetic playback first, or live-assisted mock first?
+| Topic | Decision |
+|-------|----------|
+| Dashboard stack | **SQL views only** — no lightweight API layer in v1. |
+| Multi-tenancy | **Single workspace** — no tenant/workspace filters in v1. |
+| Topic analytics | **Tags only** — do not parse `content` keywords in v1. |
+| Data strategy | **Full synthetic playback first** (see §5.1 Mode 2). Live-assisted mock is out of scope for the first cut. |
 
 ### 中文
 
-1. v1 看板是否只用 SQL 视图，还是加一个轻量 API 层？
-2. 现在要不要做 tenant/workspace 筛选，还是先单 workspace 演示？
-3. 主题统计 v1 只基于 `tags`，还是同时解析 `content` 关键词？
-4. 先优先做“全量模拟回放”，还是“真实运行 + 模拟补齐”？
+| 议题 | 决策 |
+|------|------|
+| 看板技术栈 | **仅 SQL 视图**，v1 **不加**轻量 API 层。 |
+| 多租户 | **单 workspace**，v1 **不做** tenant/workspace 筛选。 |
+| 主题统计 | **仅基于 `tags`**，v1 **不**从 `content` 解析关键词。 |
+| 数据策略 | **优先全量模拟回放**（§5.1 模式 2）；首版不以「真实运行 + 模拟补齐」为主路径。 |
 
 ---
 
-## 9) Next Step (If Approved) / 下一步（若评审通过）
+## 9) Next steps / 下一步
 
 ### EN
 
@@ -356,7 +364,6 @@ Implement in this order:
 建议实施顺序：
 
 1. 先落 SQL 视图。
-2. 再做模拟数据注入脚本。
+2. 再做模拟数据注入脚本（与 §8 一致：优先全量合成数据）。
 3. 在 Metabase 搭建第一版看板。
 4. 固化可重复的演示数据快照。
-
