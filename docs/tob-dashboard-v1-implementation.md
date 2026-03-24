@@ -35,10 +35,16 @@ This guide implements the decisions in:
   `sql/tob-dashboard/v1_views.sql`
 - One-command setup:
   `scripts/tob-dashboard/setup-v1.sh`
+- QA gate script:
+  `scripts/tob-dashboard/qa-v1.sh`
+- One-command setup + QA:
+  `scripts/tob-dashboard/demo-ready-v1.sh`
 - Metabase card pack guide:
   `docs/tob-dashboard-v1-metabase-pack.md`
 - Metabase query files:
   `sql/tob-dashboard/metabase/v1/*.sql`
+- Demo-day checklist:
+  `docs/tob-dashboard-v1-demo-day-checklist.md`
 
 ---
 
