@@ -349,6 +349,7 @@ LCM core settings (`LCM_FRESH_TAIL_COUNT`, `LCM_CONTEXT_THRESHOLD`, session patt
 | [LCM-PG-fw-plan.md](liz-plans/LCM-PG-fw-plan.md) | Async mirror implementation plan / 异步镜像实施拆解 |
 | [LCM-PG-fw-validation.md](liz-plans/LCM-PG-fw-validation.md) | Validation and testing plan (Layers 1–9) / 验证测试计划 |
 | [M4/FW-M4-implementation-plan.md](liz-plans/M4/FW-M4-implementation-plan.md) | M4 implementation plan: PG read path + shared knowledge / M4 实施计划 |
+| [toB demo runbook](docs/tob-demo-macbook-runbook.md) | Fast MacBook demo flow with commands and checkpoints / MacBook 快速演示脚本 |
 | [deep-dive-rdbms-proposal.md](liz-plans/deep-dive-rdbms-proposal.md) | Original RDBMS exploration notes / 早期 RDBMS 探索笔记 |
 
 ### Architecture decisions
