@@ -35,6 +35,10 @@ This guide implements the decisions in:
   `sql/tob-dashboard/v1_views.sql`
 - One-command setup:
   `scripts/tob-dashboard/setup-v1.sh`
+- Metabase card pack guide:
+  `docs/tob-dashboard-v1-metabase-pack.md`
+- Metabase query files:
+  `sql/tob-dashboard/metabase/v1/*.sql`
 
 ---
 
