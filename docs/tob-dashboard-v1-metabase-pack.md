@@ -23,6 +23,36 @@ Then connect Metabase to the same PostgreSQL database (`lcm_demo` by default).
 
 ---
 
+## 1.1 Chinese-first Presenter Mode / 中文优先演示模式
+
+### EN
+
+For China stakeholder demos, prefer Chinese presentation labels:
+
+1. Set Metabase language to Chinese where available:
+   - Admin -> Settings -> Localization (or account-level language setting)
+2. Use Chinese dashboard/tab/card names.
+3. Prefer Chinese axis/legend labels via:
+   - Metabase display-name overrides, or
+   - SQL aliases (e.g. `AS "快照时间"`).
+
+Out of scope: full product UI translation across all Metabase versions.
+
+### 中文
+
+面向国内汇报时，建议采用中文优先展示：
+
+1. 若版本支持，将 Metabase 语言设置为中文：
+   - 管理后台 -> 设置 -> 本地化（或账号语言设置）
+2. 看板/分栏/卡片标题尽量中文化。
+3. 坐标轴与图例优先中文：
+   - 在 Metabase 中改显示名，或
+   - 在 SQL 中直接使用中文别名（如 `AS "快照时间"`）。
+
+说明：Metabase 产品 UI 是否完整汉化受版本影响，不属于本仓库控制范围。
+
+---
+
 ## 2) Dashboard Tabs / 看板分栏
 
 Create one dashboard with 3 tabs:
@@ -133,9 +163,31 @@ v1 以简洁为主，查询已内置时间窗口（如 30 天、72 小时）。
 3. Set visualization exactly per table in §3.
 4. Assemble into the 3-tab dashboard per §4.
 5. Save dashboard as: `LCM-PG toB Dashboard v1`.
+6. For Chinese-first demos, apply the checklist in `docs/tob-dashboard-v1-chinese-presenter-checklist.md`.
 
 1. 执行 `scripts/tob-dashboard/setup-v1.sh`。
 2. 在 Metabase 中用上述 SQL 文件创建 10 个原生查询问题。
 3. 按第 3 节设置图表类型与字段。
 4. 按第 4 节组装成 3 个分栏的 Dashboard。
 5. 保存名称：`LCM-PG toB Dashboard v1`。
+6. 若为中文汇报，请按 `docs/tob-dashboard-v1-chinese-presenter-checklist.md` 做最终标题与话术校对。
+
+---
+
+## 8) Chinese Alias Examples / 中文别名示例
+
+### EN
+
+Optional sample queries with Chinese column aliases are provided in:
+
+- `sql/tob-dashboard/metabase/v1/zh/`
+
+These are presenter-focused examples and do not replace the canonical EN queries.
+
+### 中文
+
+可选中文列别名示例位于：
+
+- `sql/tob-dashboard/metabase/v1/zh/`
+
+该目录用于演示呈现，不替代英文标准查询。

@@ -352,6 +352,8 @@ LCM core settings (`LCM_FRESH_TAIL_COUNT`, `LCM_CONTEXT_THRESHOLD`, session patt
 | [toB demo runbook](docs/tob-demo-macbook-runbook.md) | Fast MacBook demo flow with commands and checkpoints / MacBook 快速演示脚本 |
 | [toB dashboard v1 implementation](docs/tob-dashboard-v1-implementation.md) | SQL views + synthetic mock seeding + setup script / 看板 v1 实施落地 |
 | [toB dashboard v1 Metabase pack](docs/tob-dashboard-v1-metabase-pack.md) | Query-to-card mapping for fast dashboard assembly / Metabase 卡片映射 |
+| [toB dashboard v1 realistic local seed](docs/tob-dashboard-v1-realistic-local-seed.md) | Local-only extract/scrub/generate workflow for realistic demo data / 本地真实感数据流程 |
+| [toB dashboard v1 Chinese presenter checklist](docs/tob-dashboard-v1-chinese-presenter-checklist.md) | Chinese-first card title cheat sheet and talk track / 中文汇报清单 |
 | [toB dashboard v1 demo-day checklist](docs/tob-dashboard-v1-demo-day-checklist.md) | Pre-demo QA gate and fallback playbook / 演示前检查与兜底 |
 | [deep-dive-rdbms-proposal.md](liz-plans/deep-dive-rdbms-proposal.md) | Original RDBMS exploration notes / 早期 RDBMS 探索笔记 |
 
