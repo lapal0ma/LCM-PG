@@ -4,6 +4,14 @@ dist/
 .DS_Store
 .worktrees
 
+# Local-only toB demo artifacts (never commit realistic/derived data)
+.demo-local/
+data/tob-dashboard/local/
+sql/tob-dashboard/local-generated/
+*.demo.local.sql
+*.demo.local.csv
+*.demo.local.jsonl
+
 # TUI
 tui/lcm-tui
 dist/

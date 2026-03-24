@@ -43,8 +43,14 @@ This guide implements the decisions in:
   `docs/tob-dashboard-v1-metabase-pack.md`
 - Metabase query files:
   `sql/tob-dashboard/metabase/v1/*.sql`
+- Chinese presenter checklist:
+  `docs/tob-dashboard-v1-chinese-presenter-checklist.md`
 - Demo-day checklist:
   `docs/tob-dashboard-v1-demo-day-checklist.md`
+- Realistic local seed workflow:
+  `docs/tob-dashboard-v1-realistic-local-seed.md`
+- Realistic local scripts:
+  `scripts/tob-dashboard/local/*`
 
 ---
 
@@ -119,9 +125,13 @@ Build dashboard cards from these views:
 - Seeder is idempotent on primary keys / unique constraints.
 - Re-running setup updates views and appends only non-conflicting mock rows.
 - If your environment has strict RLS enabled, run seeding with a DB user that can insert demo rows.
+- Synthetic seeding remains the default committed path.
+- Realistic data path is local-only and opt-in; do not commit local generated artifacts.
 
 ### 中文
 
 - Seed 脚本在主键/唯一键层面可重复执行。
 - 重复运行会刷新视图，只插入不冲突的数据。
 - 若环境启用了严格 RLS，请使用有插入权限的数据库账号执行演示注入。
+- 合成数据仍是仓库默认路径。
+- 真实感数据路径为本地可选流程，禁止提交本地生成产物。
